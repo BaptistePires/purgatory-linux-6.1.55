@@ -7799,6 +7799,7 @@ pick_next_task_fair(struct rq *rq, struct task_struct *prev, struct rq_flags *rf
 	struct task_struct *p;
 	int new_tasks;
 
+	purgatory_update(cfs_rq);
 again:
 	if (!sched_fair_runnable(rq))
 		goto idle;
@@ -11560,6 +11561,9 @@ static int newidle_balance(struct rq *this_rq, struct rq_flags *rf)
 	u64 t0, t1, curr_cost = 0;
 	struct sched_domain *sd;
 	int pulled_task = 0;
+
+
+	purgatory_update(&this_rq->cfs);
 
 	update_misfit_status(NULL, this_rq);
 
