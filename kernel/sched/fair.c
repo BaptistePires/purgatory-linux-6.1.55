@@ -4024,7 +4024,7 @@ static void migrate_se_pelt_lag(struct sched_entity *se) {}
 static inline int
 update_cfs_rq_load_avg(u64 now, struct cfs_rq *cfs_rq)
 {
-	unsigned long removed_load = 0, removed_util = 0, removed_runnable = 0;
+	unsigned long removed_load = 0, removed_util = 0, removed_runnable = 0, removed_pweight = 0;
 	struct sched_avg *sa = &cfs_rq->avg;
 	int decayed = 0;
 
@@ -4036,12 +4036,14 @@ update_cfs_rq_load_avg(u64 now, struct cfs_rq *cfs_rq)
 		swap(cfs_rq->removed.util_avg, removed_util);
 		swap(cfs_rq->removed.load_avg, removed_load);
 		swap(cfs_rq->removed.runnable_avg, removed_runnable);
+		swap(cfs_rq->removed.purgatory_weight, removed_pweight);
 		cfs_rq->removed.nr = 0;
 		raw_spin_unlock(&cfs_rq->removed.lock);
 
 		r = removed_load;
 		sub_positive(&sa->load_avg, r);
 		sub_positive(&sa->load_sum, r * divider);
+		sub_positive(&cfs_rq->load.weight, removed_pweight);
 		/* See sa->util_sum below */
 		sa->load_sum = max_t(u32, sa->load_sum, sa->load_avg * PELT_MIN_DIVIDER);
 
@@ -4241,8 +4243,11 @@ static void sync_entity_load_avg(struct sched_entity *se)
 static void remove_entity_load_avg(struct sched_entity *se)
 {
 	struct cfs_rq *cfs_rq = cfs_rq_of(se);
+	unsigned long purgatory_weight = 0;
 	unsigned long flags;
 
+	if (se->purgatory.blocked_timestamp)
+		purgatory_weight = se->purgatory.saved_load;
 	/*
 	 * tasks cannot exit without having gone through wake_up_new_task() ->
 	 * enqueue_task_fair() which will have added things to the cfs_rq,
@@ -4256,6 +4261,7 @@ static void remove_entity_load_avg(struct sched_entity *se)
 	cfs_rq->removed.util_avg	+= se->avg.util_avg;
 	cfs_rq->removed.load_avg	+= se->avg.load_avg;
 	cfs_rq->removed.runnable_avg	+= se->avg.runnable_avg;
+	cfs_rq->removed.purgatory_weight += purgatory_weight;
 	raw_spin_unlock_irqrestore(&cfs_rq->removed.lock, flags);
 }
 
@@ -6101,6 +6107,8 @@ enqueue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 	int idle_h_nr_running = task_has_idle_policy(p);
 	int task_new = !(flags & ENQUEUE_WAKEUP);
 
+
+	// if (se->purgatory.blocked_timestamp) purgatory_remove_se(se);
 	/*
 	 * The code below (indirectly) updates schedutil which looks at
 	 * the cfs_rq utilization to select a frequency.
@@ -6197,8 +6205,7 @@ static void dequeue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 
 	util_est_dequeue(&rq->cfs, p);
 
-	if (task_sleep)
-		purgatory_add_se(&rq->cfs, se, flags);
+	if (task_sleep) purgatory_add_se(&rq->cfs, se, flags);
 
 	for_each_sched_entity(se) {
 		cfs_rq = cfs_rq_of(se);
@@ -7467,6 +7474,13 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int wake_flags)
 	int want_affine = 0;
 	/* SD_flags and WF_flags share the first nibble */
 	int sd_flag = wake_flags & 0xF;
+	struct rq_flags rf;
+
+	if (p->se.purgatory.blocked_timestamp) {
+		rq_lock(cfs_rq_of(&p->se)->rq, &rf);
+		purgatory_remove_se(cfs_rq_of(&p->se), &p->se);
+		rq_unlock(cfs_rq_of(&p->se)->rq, &rf);
+	}
 
 	/*
 	 * required for stable ->cpus_allowed
@@ -7542,6 +7556,8 @@ static void migrate_task_rq_fair(struct task_struct *p, int new_cpu)
 		struct cfs_rq *cfs_rq = cfs_rq_of(se);
 
 		se->vruntime -= u64_u32_load(cfs_rq->min_vruntime);
+		// if (p->se.purgatory.blocked_timestamp)
+		// 	purgatory_remove_se(cfs_rq_of(se), &p->se);
 	}
 
 	if (!task_on_rq_migrating(p)) {
@@ -7568,6 +7584,7 @@ static void migrate_task_rq_fair(struct task_struct *p, int new_cpu)
 
 static void task_dead_fair(struct task_struct *p)
 {
+	// purgatory_task_dead(p);
 	remove_entity_load_avg(&p->se);
 }
 
@@ -7799,7 +7816,7 @@ pick_next_task_fair(struct rq *rq, struct task_struct *prev, struct rq_flags *rf
 	struct task_struct *p;
 	int new_tasks;
 
-	purgatory_update(cfs_rq);
+	// purgatory_update(cfs_rq);
 again:
 	if (!sched_fair_runnable(rq))
 		goto idle;
@@ -11562,8 +11579,9 @@ static int newidle_balance(struct rq *this_rq, struct rq_flags *rf)
 	struct sched_domain *sd;
 	int pulled_task = 0;
 
+	if (purgatory_do_clean_on_idle())
+		purgatory_clear(&this_rq->cfs);
 
-	purgatory_update(&this_rq->cfs);
 
 	update_misfit_status(NULL, this_rq);
 

@@ -5111,6 +5111,10 @@ static struct rq *finish_task_switch(struct task_struct *prev)
 	 * transition, resulting in a double drop.
 	 */
 	prev_state = READ_ONCE(prev->__state);
+	/* Test */
+	if(unlikely(prev_state == TASK_DEAD))
+		purgatory_task_dead(prev);
+
 	vtime_task_switch(prev);
 	perf_event_task_sched_in(prev, current);
 	finish_task(prev);

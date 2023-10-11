@@ -594,13 +594,16 @@ struct cfs_rq {
 		unsigned long	load_avg;
 		unsigned long	util_avg;
 		unsigned long	runnable_avg;
+		
+		/* For the purgatory */
+		unsigned long purgatory_weight;
 	} removed;
 
 	struct {
 		unsigned long nr;
 		unsigned long blocked_load;
 		struct list_head tasks;
-		spinlock_t lock;
+		raw_spinlock_t lock;
 	} purgatory;
 
 #ifdef CONFIG_FAIR_GROUP_SCHED
@@ -3240,6 +3243,10 @@ inline int purgatory_activated(void);
 inline void purgatory_init_se(struct sched_entity *);
 inline void purgatory_init_cfs_rq(struct cfs_rq *);
 int purgatory_add_se(struct cfs_rq *, struct sched_entity *, int);
+void purgatory_remove_se(struct cfs_rq *, struct sched_entity *);
 int purgatory_update(struct cfs_rq *);
+void purgatory_clear(struct cfs_rq *);
+int purgatory_do_clean_on_idle(void);
+inline void purgatory_task_dead(struct task_struct *p);
 
 #endif /* _KERNEL_SCHED_SCHED_H */
