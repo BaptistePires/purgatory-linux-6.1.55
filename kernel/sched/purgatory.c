@@ -54,7 +54,7 @@ struct purgatory_stats {
 */
 static __read_mostly bool purgatory_on = false;
 static __read_mostly unsigned int purgatory_duration = 100000;
-static __read_mostly bool purgatory_clear_on_idle = false;
+static __read_mostly bool purgatory_clear_on_idle = true;
 
 static DEFINE_PER_CPU(struct purgatory_stats, pstats);
 
@@ -284,7 +284,7 @@ inline void purgatory_task_dead(struct task_struct *p)
 	/* Si nous sommes dans le purgatoire */
 	if (se->purgatory.blocked_timestamp) {
         // lock_purgatory(&cfs_rq->purgatory.lock);
-        list_del(&se->purgatory.tasks);
+        purgatory_remove_se(se->purgatory.cfs_rq, se);
         // unlock_purgatory(&cfs_rq->purgatory.lock);
 	}
 }

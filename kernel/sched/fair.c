@@ -7477,9 +7477,9 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int wake_flags)
 	struct rq_flags rf;
 
 	if (p->se.purgatory.blocked_timestamp) {
-		rq_lock(cfs_rq_of(&p->se)->rq, &rf);
+		rq_lock(p->se.purgatory.cfs_rq->rq, &rf);
 		purgatory_remove_se(cfs_rq_of(&p->se), &p->se);
-		rq_unlock(cfs_rq_of(&p->se)->rq, &rf);
+		rq_unlock(p->se.purgatory.cfs_rq->rq, &rf);
 	}
 
 	/*
@@ -7546,6 +7546,9 @@ static void migrate_task_rq_fair(struct task_struct *p, int new_cpu)
 {
 	struct sched_entity *se = &p->se;
 
+	if (purgatory_activated() && !lockdep_is_held(__rq_lockp(task_rq(p)))) {
+		pr_info("rq not locked in migrate_task_rq_fair\n");
+	}
 	/*
 	 * As blocked tasks retain absolute vruntime the migration needs to
 	 * deal with this by subtracting the old and adding the new
@@ -7556,8 +7559,6 @@ static void migrate_task_rq_fair(struct task_struct *p, int new_cpu)
 		struct cfs_rq *cfs_rq = cfs_rq_of(se);
 
 		se->vruntime -= u64_u32_load(cfs_rq->min_vruntime);
-		// if (p->se.purgatory.blocked_timestamp)
-		// 	purgatory_remove_se(cfs_rq_of(se), &p->se);
 	}
 
 	if (!task_on_rq_migrating(p)) {
