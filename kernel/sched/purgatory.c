@@ -1,6 +1,6 @@
 #include "sched.h"
 #include <linux/debugfs.h>
-
+#include <linux/workqueue_api.h>
 
 /* Macros and defines */
 /*
@@ -82,8 +82,6 @@ static __init int init_purgatory_fs(void)
     proc_create_single("dump_rq", 0644, NULL, dump_rqs_info);
     proc_create_single("purgatory_configuration", 0644, NULL, dump_purgatory_cfg);
 #endif
-
-    pr_info_purgatory("Init OK");
     return 0;
 }
 
@@ -150,12 +148,16 @@ int purgatory_add_se(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
 
         if (!purgatory_activated()) {
             inc_stat_field(failed_add[PURGATORY_OFF]);
+            goto deactivated;
         } else if (se->purgatory.blocked_timestamp) {
             inc_stat_field(failed_add[TIMESTAMP_SET]);
         } else if (!(flags & DEQUEUE_SLEEP)) {
             inc_stat_field(failed_add[TASK_NOT_SLEEPING]);
         }
 
+        purgatory_update(cfs_rq);
+
+deactivated:
         return 0;
     }
 

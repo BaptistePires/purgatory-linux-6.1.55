@@ -3242,11 +3242,11 @@ static inline void update_current_exec_runtime(struct task_struct *curr,
 inline int purgatory_activated(void);
 inline void purgatory_init_se(struct sched_entity *);
 inline void purgatory_init_cfs_rq(struct cfs_rq *);
-int purgatory_add_se(struct cfs_rq *, struct sched_entity *, int);
-void purgatory_remove_se(struct cfs_rq *, struct sched_entity *);
-int purgatory_update(struct cfs_rq *);
-void purgatory_clear(struct cfs_rq *);
-int purgatory_do_clean_on_idle(void);
+inline int purgatory_add_se(struct cfs_rq *, struct sched_entity *, int);
+inline void purgatory_remove_se(struct cfs_rq *, struct sched_entity *);
+inline int purgatory_update(struct cfs_rq *);
+inline void purgatory_clear(struct cfs_rq *);
+inline int purgatory_do_clean_on_idle(void);
 inline void purgatory_task_dead(struct task_struct *p);
 
 #endif /* _KERNEL_SCHED_SCHED_H */
