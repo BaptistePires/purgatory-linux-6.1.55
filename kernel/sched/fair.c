@@ -885,6 +885,7 @@ static void update_curr(struct cfs_rq *cfs_rq)
 	u64 now = rq_clock_task(rq_of(cfs_rq));
 	u64 delta_exec;
 
+	purgatory_update(cfs_rq);
 	if (unlikely(!curr))
 		return;
 
@@ -7543,9 +7544,6 @@ static void migrate_task_rq_fair(struct task_struct *p, int new_cpu)
 {
 	struct sched_entity *se = &p->se;
 
-	// if (purgatory_activated() && !lockdep_is_held(__rq_lockp(task_rq(p)))) {
-	// 	pr_info("rq not locked in migrate_task_rq_fair\n");
-	// }
 	/*
 	 * As blocked tasks retain absolute vruntime the migration needs to
 	 * deal with this by subtracting the old and adding the new
@@ -7591,7 +7589,8 @@ balance_fair(struct rq *rq, struct task_struct *prev, struct rq_flags *rf)
 {
 	if (rq->nr_running)
 		return 1;
-
+	
+	// purgatory_update(&rq->cfs);
 	return newidle_balance(rq, rf) != 0;
 }
 #endif /* CONFIG_SMP */
@@ -10580,8 +10579,7 @@ static int load_balance(int this_cpu, struct rq *this_rq,
 	cpumask_and(cpus, sched_domain_span(sd), cpu_active_mask);
 
 	schedstat_inc(sd->lb_count[idle]);
-	if (lockdep_is_held(&this_rq->__lock))
-		purgatory_update(&this_rq->cfs);
+
 redo:
 	if (!should_we_balance(&env)) {
 		*continue_balancing = 0;

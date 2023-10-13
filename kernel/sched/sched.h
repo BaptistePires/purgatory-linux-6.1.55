@@ -600,10 +600,11 @@ struct cfs_rq {
 	} removed;
 
 	struct {
+		raw_spinlock_t lock;
+		struct list_head tasks;
 		unsigned long nr;
 		unsigned long blocked_load;
-		struct list_head tasks;
-		raw_spinlock_t lock;
+		u64 next_update;
 	} purgatory;
 
 #ifdef CONFIG_FAIR_GROUP_SCHED

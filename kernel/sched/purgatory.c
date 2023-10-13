@@ -5,9 +5,11 @@
 /* Macros and defines */
 /*
  * SCHED_PURGATORY_STATS : If set, allow stats for the purgatory
- * SCHED_PURGATORY_SHADOW : Not implemented yet but the purgatory behave
- * normaly only it does not add/sub load to the runqueue.
+ * SCHED_PURGATORY_SHADOW : Everyhting happens in the purgatory except we do not update
+    the load.
 */
+
+
 #define SCHED_PURGATORY_STATS
 #define SCHED_PURGATORY_SHADOW 0
 #define pr_info_purgatory(fmt, ...) \
@@ -41,10 +43,12 @@ enum failed_add_type {
 struct purgatory_stats {
     u64 update_calls;
     u64 update_removed;
+    u64 update_too_soon;
     u64 success_add;
     u64 failed_add[FAILED_ADD_END];
     u64 insert_calls;
     u64 remove_fails;
+    
 };
 
 /* End of internal structures */
@@ -61,9 +65,29 @@ struct purgatory_stats {
 static __read_mostly bool purgatory_on = false;
 static __read_mostly unsigned int purgatory_duration = 100000;
 static __read_mostly bool purgatory_clear_on_idle = false;
+static __read_mostly u64 purgatory_update_delta_ns = 100000;
 
 static DEFINE_PER_CPU(struct purgatory_stats, pstats);
 
+ssize_t my_degufs_fs_write(struct file *file, const char __user *user_buf,
+				size_t count, loff_t *ppos)
+{
+	// int save_state = READ_ONCE(purgatory_on);
+	ssize_t ret;
+	
+
+    // for_each_possible_cpu(cpu) {
+        // cpu_rq(cpu)->cfs.purgatory.next_update = rq_clock(cpu_rq(cpu)) + purgatory_update_delta_ns * 2;
+    // }
+	ret = debugfs_write_file_bool(file, user_buf, count, ppos);
+	return ret;
+}
+static const struct file_operations fops_purgatory_on = {
+    .write = my_degufs_fs_write,
+    .read = debugfs_read_file_bool,
+    .open = simple_open,
+    .llseek = default_llseek
+};
 /* End of internal variables */
 
 /* -----------  Set-up and init functions ----------- */
@@ -73,7 +97,9 @@ static int dump_purgatory_cfg(struct seq_file *m, void *p);
 
 static __init int init_purgatory_fs(void)
 {
-    debugfs_create_bool("purgatory_on", 0644, NULL, &purgatory_on);
+    // debugfs_create_bool("purgatory_on", 0644, NULL, &purgatory_on);
+    debugfs_create_file("purgatory_on", 0644, NULL, &purgatory_on,
+        &fops_purgatory_on);
     debugfs_create_bool("purgatory_clear_on_idle", 0644, NULL, &purgatory_clear_on_idle);
     debugfs_create_u32("purgatory_duration", 0644, NULL, &purgatory_duration);
 
@@ -105,6 +131,7 @@ void purgatory_init_cfs_rq(struct cfs_rq *cfs_rq)
 	INIT_LIST_HEAD(&cfs_rq->purgatory.tasks);
 	cfs_rq->purgatory.nr = 0;
 	cfs_rq->purgatory.blocked_load = 0;
+    cfs_rq->purgatory.next_update = 0;
 }
 
 /* Duplicated from fair.c as they are static */
@@ -155,7 +182,6 @@ int purgatory_add_se(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
         } else if (!(flags & DEQUEUE_SLEEP)) {
             inc_stat_field(failed_add[TASK_NOT_SLEEPING]);
         }
-
         return 0;
     }
 
@@ -163,7 +189,7 @@ int purgatory_add_se(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
 
     // get_task_struct(task_of(se));
 
-    now = ktime_get_ns();
+    now = rq_clock(cfs_rq->rq);
 
     /* First we set-up se fields */
     se->purgatory.blocked_timestamp = now;
@@ -253,19 +279,26 @@ int purgatory_update(struct cfs_rq *cfs_rq)
 {
     struct sched_entity *pos, *tmp;
     int nr_removed = 0;
-    ktime_t now;
+    ktime_t now = rq_clock(cfs_rq->rq);
+
     /* 
         Here we don't check if the purgatory if deactivated
         because if do deactivate it and some tasks remain
         in it, we need to remove them.
     */
-    if (!cfs_rq->purgatory.nr)
+    if (!cfs_rq->purgatory.nr || !purgatory_activated() || (now - cfs_rq->purgatory.next_update) > 0) {
+        if ((now - cfs_rq->purgatory.next_update) > 0)
+            inc_stat_field(update_too_soon);
+
         return 0;
+    }
 
 
     inc_stat_field(update_calls);
-    // lockdep_assert_rq_held(rq_of(cfs_rq));
-    now = ktime_get_ns();
+    
+    lockdep_assert_rq_held(rq_of(cfs_rq));
+    
+
     lock_purgatory(&cfs_rq->purgatory.lock);
     list_for_each_entry_safe(pos, tmp, &cfs_rq->purgatory.tasks, purgatory.tasks) {
         if (purgatory_try_to_remove_se(cfs_rq, pos, now)) {
@@ -278,6 +311,8 @@ int purgatory_update(struct cfs_rq *cfs_rq)
     trace_purgatory(cfs_rq, 0, now);
     add_stat_field(update_removed, nr_removed);
 
+    
+    cfs_rq->purgatory.next_update = now + nr_removed ? purgatory_update_delta_ns : purgatory_update_delta_ns * 2;
     return nr_removed;
 }
 
@@ -296,7 +331,7 @@ void purgatory_clear(struct cfs_rq *cfs_rq)
         purgatory_remove_se(cfs_rq, pos);
     }
     unlock_purgatory(&cfs_rq->purgatory.lock);
-    trace_purgatory(cfs_rq, 0, ktime_get_ns());
+    trace_purgatory(cfs_rq, 0, 0);
 }
 
 inline void purgatory_task_dead(struct task_struct *p)
@@ -323,8 +358,9 @@ static int pshow(struct seq_file *m, void *p)
 	for_each_possible_cpu(cpu) {
 		curr_stats = per_cpu_ptr(&pstats, cpu);
 		seq_printf(m, "+--------------------+\n");
-
-        // seq_printf
+        seq_printf(m, "update calls    : %llu\n", curr_stats->update_calls);
+        seq_printf(m, "update removed  : %llu\n", curr_stats->update_removed);
+        seq_printf(m, "update too soon : %llu\n", curr_stats->update_too_soon);
 	}
 	return 0;
 }
