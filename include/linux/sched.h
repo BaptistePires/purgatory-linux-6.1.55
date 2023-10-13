@@ -585,7 +585,7 @@ struct sched_entity {
 		struct list_head tasks;
 		struct cfs_rq *cfs_rq;
 		int cpu_id;
-		unsigned int saved_load;
+		unsigned long saved_load;
 		unsigned short out;
 	} purgatory;
 };
