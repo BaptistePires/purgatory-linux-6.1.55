@@ -4381,6 +4381,7 @@ static void __sched_fork(unsigned long clone_flags, struct task_struct *p)
 	p->se.nr_migrations		= 0;
 	p->se.vruntime			= 0;
 	INIT_LIST_HEAD(&p->se.group_node);
+	purgatory_init_se(&p->se);
 
 #ifdef CONFIG_FAIR_GROUP_SCHED
 	p->se.cfs_rq			= NULL;
@@ -4594,6 +4595,7 @@ late_initcall(sched_core_sysctl_init);
 int sched_fork(unsigned long clone_flags, struct task_struct *p)
 {
 	__sched_fork(clone_flags, p);
+
 	/*
 	 * We mark the process as NEW here. This guarantees that
 	 * nobody will actually run it, and a signal or other external
@@ -5111,9 +5113,6 @@ static struct rq *finish_task_switch(struct task_struct *prev)
 	 * transition, resulting in a double drop.
 	 */
 	prev_state = READ_ONCE(prev->__state);
-	/* Test */
-	// if(unlikely(prev_state == TASK_DEAD))
-	// 	purgatory_task_dead(prev);
 
 	vtime_task_switch(prev);
 	perf_event_task_sched_in(prev, current);

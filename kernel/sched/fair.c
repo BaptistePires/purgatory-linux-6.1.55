@@ -885,7 +885,7 @@ static void update_curr(struct cfs_rq *cfs_rq)
 	u64 now = rq_clock_task(rq_of(cfs_rq));
 	u64 delta_exec;
 
-	purgatory_update(cfs_rq);
+	
 	if (unlikely(!curr))
 		return;
 
@@ -7580,7 +7580,6 @@ static void migrate_task_rq_fair(struct task_struct *p, int new_cpu)
 
 static void task_dead_fair(struct task_struct *p)
 {
-	// purgatory_task_dead(p);
 	remove_entity_load_avg(&p->se);
 }
 
@@ -11575,9 +11574,10 @@ static int newidle_balance(struct rq *this_rq, struct rq_flags *rf)
 	struct sched_domain *sd;
 	int pulled_task = 0;
 
-	if (purgatory_do_clean_on_idle())
-		purgatory_clear(&this_rq->cfs);
-
+	// if (purgatory_do_clean_on_idle())
+	// 	purgatory_clear(&this_rq->cfs);
+	// else
+	// 	purgatory_update(&this_rq->cfs);
 
 	update_misfit_status(NULL, this_rq);
 

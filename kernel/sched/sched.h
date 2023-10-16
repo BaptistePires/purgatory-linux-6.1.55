@@ -600,7 +600,6 @@ struct cfs_rq {
 	} removed;
 
 	struct {
-		raw_spinlock_t lock;
 		struct list_head tasks;
 		unsigned long nr;
 		unsigned long blocked_load;
@@ -3248,6 +3247,5 @@ void purgatory_remove_se(struct cfs_rq *, struct sched_entity *);
 int purgatory_update(struct cfs_rq *);
 void purgatory_clear(struct cfs_rq *);
 int purgatory_do_clean_on_idle(void);
-inline void purgatory_task_dead(struct task_struct *p);
 
 #endif /* _KERNEL_SCHED_SCHED_H */

@@ -9,12 +9,13 @@
     the load.
 */
 
-
+#define SCHED_PURGATORY_DEBUG 
 #define SCHED_PURGATORY_STATS
 #define SCHED_PURGATORY_SHADOW 0
-#define pr_info_purgatory(fmt, ...) \
-	printk(KERN_INFO "[Purgatory] " pr_fmt(fmt), ##__VA_ARGS__)
+/* #define pr_info_purgatory(fmt, ...) \
+	printk(KERN_INFO "[Purgatory] " pr_fmt(fmt), ##__VA_ARGS__) */
 
+#define pr_info_purgatory(fmt, ...) 
 #define trace_purgatory(cfs_rq, event, ts) trace_sched_purgatory_change((cfs_rq)->rq->cpu, (cfs_rq)->nr_running, (cfs_rq)->purgatory.nr, (cfs_rq)->purgatory.blocked_load, (cfs_rq)->load.weight, (cfs_rq)->avg.load_avg, (event), (ts));
 
 #ifdef SCHED_PURGATORY_STATS
@@ -116,18 +117,15 @@ static __init int init_purgatory_fs(void)
 late_initcall(init_purgatory_fs);
 void purgatory_init_se(struct sched_entity *se)
 {
-    spin_lock_init(&se->purgatory.lock);
     INIT_LIST_HEAD(&se->purgatory.tasks);
     se->purgatory.blocked_timestamp = 0;
     se->purgatory.cfs_rq = NULL;
-    se->purgatory.cpu_id = -1;
     se->purgatory.saved_load = 0;
-    se->purgatory.out = 0;
 }
 
 void purgatory_init_cfs_rq(struct cfs_rq *cfs_rq)
 {
-	raw_spin_lock_init(&cfs_rq->purgatory.lock);
+
 	INIT_LIST_HEAD(&cfs_rq->purgatory.tasks);
 	cfs_rq->purgatory.nr = 0;
 	cfs_rq->purgatory.blocked_load = 0;
@@ -194,19 +192,16 @@ int purgatory_add_se(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
     /* First we set-up se fields */
     se->purgatory.blocked_timestamp = now;
     se->purgatory.cfs_rq = cfs_rq;
-    se->purgatory.out = 0;
+
     se->purgatory.saved_load = se->load.weight;
     // update_load_add(&cfs_rq->load, se->purgatory.saved_load);
     cfs_rq->load.weight += se->purgatory.saved_load;
-    // a = scale_load_down(se->purgatory.saved_load);
-    // pr_info_purgatory("%lu %lu\n", se->purgatory.saved_load, a);
 
     /* Then we set-up rq fields */
-    lock_purgatory(&cfs_rq->purgatory.lock);
     list_add_tail(&se->purgatory.tasks, &cfs_rq->purgatory.tasks);
     cfs_rq->purgatory.nr++;
     cfs_rq->purgatory.blocked_load += se->purgatory.saved_load;
-    unlock_purgatory(&cfs_rq->purgatory.lock);
+    
     trace_purgatory(cfs_rq, 0, now);
     return 1;
 }
@@ -221,8 +216,9 @@ void purgatory_remove_se(struct cfs_rq *cfs_rq, struct sched_entity *se)
 
     if (cfs_rq != se->purgatory.cfs_rq)
         BUG();
+    
+    lockdep_assert_rq_held(cfs_rq->rq);
 
-    // update_load_sub(&cfs_rq->load, se->purgatory.saved_load);
     cfs_rq->load.weight -= se->purgatory.saved_load;
     cfs_rq->purgatory.blocked_load -= se->purgatory.saved_load;
     cfs_rq->purgatory.nr--;
@@ -230,9 +226,8 @@ void purgatory_remove_se(struct cfs_rq *cfs_rq, struct sched_entity *se)
     se->purgatory.blocked_timestamp = 0;
     se->purgatory.saved_load = 0;
     se->purgatory.cfs_rq = NULL;
-    se->purgatory.out = 0;
 
-    list_del(&se->purgatory.tasks);
+    list_del_init_careful(&se->purgatory.tasks);
 }
 
 /*
@@ -250,7 +245,15 @@ int purgatory_try_to_remove_se(struct cfs_rq *cfs_rq, struct sched_entity *se,
     if (!se->purgatory.blocked_timestamp)
         return 0;
 
-    // lockdep_assert_rq_held(cfs_rq->rq);
+    lockdep_assert_rq_held(cfs_rq->rq);
+
+#ifdef SCHED_PURGATORY_DEBUG
+    if (se->purgatory.cfs_rq != cfs_rq) {
+        pr_info("se->purgatory.cfs_rq != cfs_rq\n");
+        BUG();
+    }
+        
+#endif
 
     if (purgatory_can_remove_se(se, now)) {
         purgatory_remove_se(cfs_rq, se);
@@ -323,9 +326,11 @@ void purgatory_clear(struct cfs_rq *cfs_rq)
 {
     struct sched_entity *pos, *tmp;
     
-    // lockdep_assert_rq_held(cfs_rq->rq);
+    lockdep_assert_rq_held(cfs_rq->rq);
+
     if (!cfs_rq->purgatory.nr)
         return;
+
     lock_purgatory(&cfs_rq->purgatory.lock);
     list_for_each_entry_safe(pos, tmp, &cfs_rq->purgatory.tasks, purgatory.tasks) {
         purgatory_remove_se(cfs_rq, pos);
@@ -334,19 +339,6 @@ void purgatory_clear(struct cfs_rq *cfs_rq)
     trace_purgatory(cfs_rq, 0, 0);
 }
 
-inline void purgatory_task_dead(struct task_struct *p)
-{
-	// struct rq_flags rf;
-	// int do_lock = 0;
-	struct sched_entity *se = &p->se;
-	// struct cfs_rq *cfs_rq = se->purgatory.cfs_rq;
-	/* Si nous sommes dans le purgatoire */
-	if (se->purgatory.blocked_timestamp) {
-        // lock_purgatory(&cfs_rq->purgatory.lock);
-        purgatory_remove_se(se->purgatory.cfs_rq, se);
-        // unlock_purgatory(&cfs_rq->purgatory.lock);
-	}
-}
 
 /* Debug functions */
 static int pshow(struct seq_file *m, void *p)

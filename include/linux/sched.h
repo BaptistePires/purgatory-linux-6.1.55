@@ -580,13 +580,10 @@ struct sched_entity {
 #endif
 
 	struct {
-		spinlock_t lock;
 		ktime_t blocked_timestamp;
 		struct list_head tasks;
 		struct cfs_rq *cfs_rq;
-		int cpu_id;
 		unsigned long saved_load;
-		unsigned short out;
 	} purgatory;
 };
 
