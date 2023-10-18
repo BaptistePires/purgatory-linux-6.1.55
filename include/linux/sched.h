@@ -580,7 +580,7 @@ struct sched_entity {
 #endif
 
 	struct {
-		ktime_t blocked_timestamp;
+		u64 blocked_timestamp;
 		struct list_head tasks;
 		struct cfs_rq *cfs_rq;
 		unsigned long saved_load;

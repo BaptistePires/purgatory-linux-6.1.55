@@ -29,9 +29,6 @@
     #define add_stat_field(name, inc)
 #endif
 
-#define lock_purgatory(__lock)
-#define unlock_purgatory(__lock)
-
 /* End of macros and defines */
 
 /* Internal structures */
@@ -115,6 +112,12 @@ static __init int init_purgatory_fs(void)
 }
 
 late_initcall(init_purgatory_fs);
+/*
+    Initializes @se->purgatory fields.
+
+    Called in :
+        - __sched_fork
+*/
 void purgatory_init_se(struct sched_entity *se)
 {
     INIT_LIST_HEAD(&se->purgatory.tasks);
@@ -123,6 +126,12 @@ void purgatory_init_se(struct sched_entity *se)
     se->purgatory.saved_load = 0;
 }
 
+/*
+    Initializes @cfs->purgatory fields.
+
+    Called in :
+        - init_cfs_rq
+*/
 void purgatory_init_cfs_rq(struct cfs_rq *cfs_rq)
 {
 
@@ -159,19 +168,29 @@ int purgatory_do_clean_on_idle(void)
 {
     return purgatory_clear_on_idle;
 }
-# define scale_load_down(w) \
-({ \
-	unsigned long __w = (w); \
-	if (__w) \
-		__w = max(2UL, __w >> SCHED_FIXEDPOINT_SHIFT); \
-	__w; \
-})
+
+/*
+    Add @se to the purgatory of @cfs runqueue.
+
+    Returns :
+        - 1 : if the tasks was added.
+        - 0 : if not.
+    Called in :
+        - dequeue_task_fair
+
+    Requirements :
+        - locks : old the cfs_rq->rq lock
+*/
 int purgatory_add_se(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
 {
     ktime_t now;
     inc_stat_field(insert_calls);
     
-    if (!purgatory_activated() || se->purgatory.blocked_timestamp || !(flags & DEQUEUE_SLEEP)) {
+    if (se->purgatory.blocked_timestamp && flags & ENQUEUE_MIGRATED) {
+        pr_info_purgatory("task got migrated");
+    }
+
+    if (!purgatory_activated() || se->purgatory.blocked_timestamp || !(flags & DEQUEUE_SLEEP) ) {
 
         if (!purgatory_activated()) {
             inc_stat_field(failed_add[PURGATORY_OFF]);
@@ -185,7 +204,6 @@ int purgatory_add_se(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
 
     lockdep_assert_rq_held(cfs_rq->rq);
 
-    // get_task_struct(task_of(se));
 
     now = rq_clock(cfs_rq->rq);
 
@@ -210,13 +228,22 @@ int purgatory_add_se(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
     This function will remove @se from the purgatory of @cfs_rq
     without doing any tests so be carefull (esp. for the lock on 
     @cfs_rq).
+
+    Called in :
+        - purgatory_try_to_remove
+        - purgatory_clear
+        - dequeue_task_fair
+    Requirements :
+        - locks : old the @cfs_rq->rq lock
 */
 void purgatory_remove_se(struct cfs_rq *cfs_rq, struct sched_entity *se)
 {
 
+#ifdef SCHED_PURGATORY_DEBUG
     if (cfs_rq != se->purgatory.cfs_rq)
         BUG();
-    
+#endif
+
     lockdep_assert_rq_held(cfs_rq->rq);
 
     cfs_rq->load.weight -= se->purgatory.saved_load;
@@ -233,14 +260,34 @@ void purgatory_remove_se(struct cfs_rq *cfs_rq, struct sched_entity *se)
 /*
     Helper function to test if we can remove @se if it has 
     exceeded the maximum duration in the purgatory state.
+    
+    Returns:
+        - 1 : if the tasks has exceeded the maximum time in the 
+            purgatory.
+        - 0 : if not
+        
+    Called in :
+        - purgatory_try_to_remove_se
+    
+    Requirements : None
 */
-inline int purgatory_can_remove_se(struct sched_entity *se, ktime_t now)
+inline int purgatory_can_remove_se(struct sched_entity *se, u64 now)
 {
     return (now - se->purgatory.blocked_timestamp) > purgatory_duration;
 }
 
+/*
+    Tries to remove a task @se from the purgatory. It will we removed 
+    iif 
+        @se->purgatory.cfs == @cfs_rq && \
+        (@now - @se->purgatory.blocked_timestamp) > purgatory_duration
+
+    Return :
+        1 : If it was removed.
+        0 : If not.
+*/
 int purgatory_try_to_remove_se(struct cfs_rq *cfs_rq, struct sched_entity *se,
-                ktime_t now)
+                u64 now)
 {
     if (!se->purgatory.blocked_timestamp)
         return 0;
@@ -272,17 +319,24 @@ int purgatory_try_to_remove_se(struct cfs_rq *cfs_rq, struct sched_entity *se,
     In order to not go through the whole list, we rely on 
     the insertion order. It means that if a task T_1 has not
     spend more than @purgatory_duration in the purgatory of 
-    @cfs_rq, the tasks inserted later have not too.
+    @cfs_rq, the tasks inserted later won't have.
 
     - @cfs_rq : The runqueue to update
 
-    returns : Number of tasks effectivly removed from the purgatory.
+    Return :
+        - The number of tasks removed from the purgatory
+
+    Called in :
+        - 
+
+    Requirements :
+        - @cfs_rq->rq->__lock must be held.
 */
 int purgatory_update(struct cfs_rq *cfs_rq)
 {
     struct sched_entity *pos, *tmp;
     int nr_removed = 0;
-    ktime_t now = rq_clock(cfs_rq->rq);
+    u64 now = rq_clock(cfs_rq->rq);
 
     /* 
         Here we don't check if the purgatory if deactivated
@@ -301,8 +355,6 @@ int purgatory_update(struct cfs_rq *cfs_rq)
     
     lockdep_assert_rq_held(rq_of(cfs_rq));
     
-
-    lock_purgatory(&cfs_rq->purgatory.lock);
     list_for_each_entry_safe(pos, tmp, &cfs_rq->purgatory.tasks, purgatory.tasks) {
         if (purgatory_try_to_remove_se(cfs_rq, pos, now)) {
             nr_removed++;
@@ -310,17 +362,23 @@ int purgatory_update(struct cfs_rq *cfs_rq)
             break;
         }
     }
-    unlock_purgatory(&cfs_rq->purgatory.lock);
+
     trace_purgatory(cfs_rq, 0, now);
     add_stat_field(update_removed, nr_removed);
-
     
     cfs_rq->purgatory.next_update = now + nr_removed ? purgatory_update_delta_ns : purgatory_update_delta_ns * 2;
+
     return nr_removed;
 }
 
 /*
-    This function clears the purgatory. Meaning it empties it
+    This function empties the purgatory of @cfs_rq.
+
+    Called in:
+        - balance_fair
+    
+    Requirements:
+        - @cfs_rq->rq->__lock must be held.
 */
 void purgatory_clear(struct cfs_rq *cfs_rq)
 {
@@ -331,11 +389,10 @@ void purgatory_clear(struct cfs_rq *cfs_rq)
     if (!cfs_rq->purgatory.nr)
         return;
 
-    lock_purgatory(&cfs_rq->purgatory.lock);
     list_for_each_entry_safe(pos, tmp, &cfs_rq->purgatory.tasks, purgatory.tasks) {
         purgatory_remove_se(cfs_rq, pos);
     }
-    unlock_purgatory(&cfs_rq->purgatory.lock);
+
     trace_purgatory(cfs_rq, 0, 0);
 }
 
