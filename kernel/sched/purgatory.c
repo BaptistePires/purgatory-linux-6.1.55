@@ -246,7 +246,8 @@ void purgatory_remove_se(struct cfs_rq *cfs_rq, struct sched_entity *se)
 
     lockdep_assert_rq_held(cfs_rq->rq);
 
-    cfs_rq->load.weight -= se->purgatory.saved_load;
+    update_load_add(&cfs_rq->load, se->purgatory.saved_load);
+    // cfs_rq->load.weight -= se->purgatory.saved_load;
     cfs_rq->purgatory.blocked_load -= se->purgatory.saved_load;
     cfs_rq->purgatory.nr--;
 

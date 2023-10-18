@@ -7589,8 +7589,8 @@ balance_fair(struct rq *rq, struct task_struct *prev, struct rq_flags *rf)
 	if (rq->nr_running)
 		return 1;
 	
-	if (purgatory_do_clean_on_idle())
-		purgatory_clear(&rq->cfs);
+	// if (purgatory_do_clean_on_idle())
+	// 	purgatory_clear(&rq->cfs);
 	// purgatory_update(&rq->cfs);
 	return newidle_balance(rq, rf) != 0;
 }
