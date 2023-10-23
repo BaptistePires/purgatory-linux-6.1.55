@@ -6207,10 +6207,9 @@ static void dequeue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 	util_est_dequeue(&rq->cfs, p);
 
 	if (task_sleep) purgatory_add_se(&rq->cfs, se, flags);
-	if (flags & TASK_ON_RQ_MIGRATING) {
-		if (se->purgatory.blocked_timestamp)
-			purgatory_remove_se(&rq->cfs, se);
-	}
+	if (se->purgatory.blocked_timestamp)
+		purgatory_remove_se(&rq->cfs, se);
+	
 
 	for_each_sched_entity(se) {
 		cfs_rq = cfs_rq_of(se);

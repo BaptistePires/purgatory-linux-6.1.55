@@ -67,21 +67,16 @@ static __read_mostly u64 purgatory_update_delta_ns = 100000;
 
 static DEFINE_PER_CPU(struct purgatory_stats, pstats);
 
-ssize_t my_degufs_fs_write(struct file *file, const char __user *user_buf,
+ssize_t purgatory_on_fs_write(struct file *file, const char __user *user_buf,
 				size_t count, loff_t *ppos)
 {
-	// int save_state = READ_ONCE(purgatory_on);
 	ssize_t ret;
 	
-
-    // for_each_possible_cpu(cpu) {
-        // cpu_rq(cpu)->cfs.purgatory.next_update = rq_clock(cpu_rq(cpu)) + purgatory_update_delta_ns * 2;
-    // }
 	ret = debugfs_write_file_bool(file, user_buf, count, ppos);
 	return ret;
 }
 static const struct file_operations fops_purgatory_on = {
-    .write = my_degufs_fs_write,
+    .write = purgatory_on_fs_write,
     .read = debugfs_read_file_bool,
     .open = simple_open,
     .llseek = default_llseek
@@ -95,7 +90,6 @@ static int dump_purgatory_cfg(struct seq_file *m, void *p);
 
 static __init int init_purgatory_fs(void)
 {
-    // debugfs_create_bool("purgatory_on", 0644, NULL, &purgatory_on);
     debugfs_create_file("purgatory_on", 0644, NULL, &purgatory_on,
         &fops_purgatory_on);
     debugfs_create_bool("purgatory_clear_on_idle", 0644, NULL, &purgatory_clear_on_idle);
@@ -182,6 +176,7 @@ int purgatory_do_clean_on_idle(void)
         - locks : old the cfs_rq->rq lock
 */
 int purgatory_add_se(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
+    __must_hold(cfs_rq->rq->__lock)
 {
     ktime_t now;
     inc_stat_field(insert_calls);
@@ -217,6 +212,7 @@ int purgatory_add_se(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
 
     /* Then we set-up rq fields */
     list_add_tail(&se->purgatory.tasks, &cfs_rq->purgatory.tasks);
+    
     cfs_rq->purgatory.nr++;
     cfs_rq->purgatory.blocked_load += se->purgatory.saved_load;
     
@@ -237,6 +233,7 @@ int purgatory_add_se(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
         - locks : old the @cfs_rq->rq lock
 */
 void purgatory_remove_se(struct cfs_rq *cfs_rq, struct sched_entity *se)
+    __must_hold(cfs_rq->rq->__lock)
 {
 
 #ifdef SCHED_PURGATORY_DEBUG
@@ -247,7 +244,6 @@ void purgatory_remove_se(struct cfs_rq *cfs_rq, struct sched_entity *se)
     lockdep_assert_rq_held(cfs_rq->rq);
 
     update_load_add(&cfs_rq->load, se->purgatory.saved_load);
-    // cfs_rq->load.weight -= se->purgatory.saved_load;
     cfs_rq->purgatory.blocked_load -= se->purgatory.saved_load;
     cfs_rq->purgatory.nr--;
 
@@ -256,6 +252,7 @@ void purgatory_remove_se(struct cfs_rq *cfs_rq, struct sched_entity *se)
     se->purgatory.cfs_rq = NULL;
 
     list_del_init_careful(&se->purgatory.tasks);
+
 }
 
 /*
@@ -334,6 +331,7 @@ int purgatory_try_to_remove_se(struct cfs_rq *cfs_rq, struct sched_entity *se,
         - @cfs_rq->rq->__lock must be held.
 */
 int purgatory_update(struct cfs_rq *cfs_rq)
+    __must_hold(cfs_rq->rq->__lock)
 {
     struct sched_entity *pos, *tmp;
     int nr_removed = 0;
@@ -382,6 +380,7 @@ int purgatory_update(struct cfs_rq *cfs_rq)
         - @cfs_rq->rq->__lock must be held.
 */
 void purgatory_clear(struct cfs_rq *cfs_rq)
+    __must_hold(cfs_rq->rq->__lock)
 {
     struct sched_entity *pos, *tmp;
     
