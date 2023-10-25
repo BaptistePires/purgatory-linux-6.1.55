@@ -6109,7 +6109,7 @@ enqueue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 	int task_new = !(flags & ENQUEUE_WAKEUP);
 
 
-	// if (se->purgatory.blocked_timestamp) purgatory_remove_se(se);
+	if (se->purgatory.blocked_timestamp) purgatory_remove_se(&rq->cfs, se);
 	/*
 	 * The code below (indirectly) updates schedutil which looks at
 	 * the cfs_rq utilization to select a frequency.
@@ -6203,12 +6203,21 @@ static void dequeue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 	int task_sleep = flags & DEQUEUE_SLEEP;
 	int idle_h_nr_running = task_has_idle_policy(p);
 	bool was_sched_idle = sched_idle_rq(rq);
+	int state = READ_ONCE(p->__state);
 
 	util_est_dequeue(&rq->cfs, p);
 
-	if (task_sleep) purgatory_add_se(&rq->cfs, se, flags);
-	if (se->purgatory.blocked_timestamp)
+	/* It can happens when : 
+		1. During a migration
+		2.
+	*/
+	if (se->purgatory.blocked_timestamp) {
 		purgatory_remove_se(&rq->cfs, se);
+	} else {
+		if (!(p->on_rq & TASK_ON_RQ_MIGRATING) && !(state & TASK_DEAD) && flags & DEQUEUE_SLEEP)
+			purgatory_add_se(&rq->cfs, se, flags);
+	}
+
 	
 
 	for_each_sched_entity(se) {
@@ -7580,6 +7589,7 @@ static void migrate_task_rq_fair(struct task_struct *p, int new_cpu)
 static void task_dead_fair(struct task_struct *p)
 {
 	remove_entity_load_avg(&p->se);
+	purgatory_do_task_dead(p);
 }
 
 static int
@@ -11575,10 +11585,10 @@ static int newidle_balance(struct rq *this_rq, struct rq_flags *rf)
 	struct sched_domain *sd;
 	int pulled_task = 0;
 
-	// if (purgatory_do_clean_on_idle())
-	// 	purgatory_clear(&this_rq->cfs);
-	// else
-	// 	purgatory_update(&this_rq->cfs);
+	if (purgatory_do_clean_on_idle())
+		purgatory_clear(&this_rq->cfs);
+	else
+		purgatory_update(&this_rq->cfs);
 
 	update_misfit_status(NULL, this_rq);
 

@@ -5114,6 +5114,7 @@ static struct rq *finish_task_switch(struct task_struct *prev)
 	 */
 	prev_state = READ_ONCE(prev->__state);
 
+	
 	vtime_task_switch(prev);
 	perf_event_task_sched_in(prev, current);
 	finish_task(prev);

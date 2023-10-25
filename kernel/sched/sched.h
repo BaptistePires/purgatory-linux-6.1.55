@@ -597,6 +597,7 @@ struct cfs_rq {
 		
 		/* For the purgatory */
 		unsigned long purgatory_weight;
+
 	} removed;
 
 	struct {
@@ -604,6 +605,7 @@ struct cfs_rq {
 		unsigned long nr;
 		unsigned long blocked_load;
 		u64 next_update;
+		unsigned long blocked_avg_load;
 	} purgatory;
 
 #ifdef CONFIG_FAIR_GROUP_SCHED
@@ -3247,5 +3249,6 @@ void purgatory_remove_se(struct cfs_rq *, struct sched_entity *);
 int purgatory_update(struct cfs_rq *);
 void purgatory_clear(struct cfs_rq *);
 int purgatory_do_clean_on_idle(void);
+void purgatory_do_task_dead(struct task_struct *);
 
 #endif /* _KERNEL_SCHED_SCHED_H */

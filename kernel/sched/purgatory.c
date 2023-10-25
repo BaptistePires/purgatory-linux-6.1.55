@@ -16,7 +16,10 @@
 	printk(KERN_INFO "[Purgatory] " pr_fmt(fmt), ##__VA_ARGS__) */
 
 #define pr_info_purgatory(fmt, ...) 
-#define trace_purgatory(cfs_rq, event, ts) trace_sched_purgatory_change((cfs_rq)->rq->cpu, (cfs_rq)->nr_running, (cfs_rq)->purgatory.nr, (cfs_rq)->purgatory.blocked_load, (cfs_rq)->load.weight, (cfs_rq)->avg.load_avg, (event), (ts));
+// #define trace_purgatory(cfs_rq, event, ts) trace_sched_purgatory_change((cfs_rq)->rq->cpu, (cfs_rq)->nr_running, (cfs_rq)->purgatory.nr, (cfs_rq)->purgatory.blocked_load, (cfs_rq)->load.weight, (cfs_rq)->avg.load_avg, (event), (ts));
+#define trace_purgatory(cfs_rq, event, ts)
+
+#define trace_purgatory_load(cfs_rq) trace_sched_purgatory_load((cfs_rq)->rq->cpu, (cfs_rq)->load.weight, (cfs_rq)->purgatory.blocked_load, (cfs_rq)->avg.load_avg, (cfs_rq)->purgatory.blocked_avg_load, (cfs_rq)->nr_running, (cfs_rq)->purgatory.nr)
 
 #ifdef SCHED_PURGATORY_STATS
     #define inc_stat_field(name) \
@@ -67,6 +70,7 @@ static __read_mostly u64 purgatory_update_delta_ns = 100000;
 
 static DEFINE_PER_CPU(struct purgatory_stats, pstats);
 
+
 ssize_t purgatory_on_fs_write(struct file *file, const char __user *user_buf,
 				size_t count, loff_t *ppos)
 {
@@ -81,6 +85,33 @@ static const struct file_operations fops_purgatory_on = {
     .open = simple_open,
     .llseek = default_llseek
 };
+
+
+ssize_t purgatory_clear_fs_write(struct file *file, const char __user *user_buf,
+				size_t count, loff_t *ppos)
+{
+	ssize_t ret;
+    int cpu;
+    struct rq_flags rf;
+    for_each_possible_cpu(cpu) {
+        struct rq *rq = cpu_rq(cpu);
+        rq_lock_irq(rq, &rf);
+        purgatory_clear(&rq->cfs);
+        rq_unlock_irq(rq, &rf);
+    }
+
+	ret = debugfs_write_file_bool(file, user_buf, count, ppos);
+	return ret;
+}
+
+static const struct file_operations fops_purgatory_clear = {
+    .write = purgatory_clear_fs_write,
+    .read = debugfs_read_file_bool,
+    .open = simple_open,
+    .llseek = default_llseek
+};
+
+static bool clear_purgatory_debugfs = false;
 /* End of internal variables */
 
 /* -----------  Set-up and init functions ----------- */
@@ -94,7 +125,8 @@ static __init int init_purgatory_fs(void)
         &fops_purgatory_on);
     debugfs_create_bool("purgatory_clear_on_idle", 0644, NULL, &purgatory_clear_on_idle);
     debugfs_create_u32("purgatory_duration", 0644, NULL, &purgatory_duration);
-
+    debugfs_create_file("purgatory_clear", 0644, NULL, &clear_purgatory_debugfs,
+        &fops_purgatory_clear);
 #ifdef SCHED_PURGATORY_STATS 
     proc_create_single("pstats", 0644, NULL, pshow);
     proc_create_single("dump_rq", 0644, NULL, dump_rqs_info);
@@ -124,7 +156,7 @@ void purgatory_init_se(struct sched_entity *se)
     Initializes @cfs->purgatory fields.
 
     Called in :
-        - init_cfs_rq
+  ²      - init_cfs_rq
 */
 void purgatory_init_cfs_rq(struct cfs_rq *cfs_rq)
 {
@@ -178,14 +210,11 @@ int purgatory_do_clean_on_idle(void)
 int purgatory_add_se(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
     __must_hold(cfs_rq->rq->__lock)
 {
-    ktime_t now;
+    u64 now;
     inc_stat_field(insert_calls);
-    
-    if (se->purgatory.blocked_timestamp && flags & ENQUEUE_MIGRATED) {
-        pr_info_purgatory("task got migrated");
-    }
 
-    if (!purgatory_activated() || se->purgatory.blocked_timestamp || !(flags & DEQUEUE_SLEEP) ) {
+
+    if (!purgatory_activated() || se->purgatory.blocked_timestamp || !(flags & DEQUEUE_SLEEP)) {
 
         if (!purgatory_activated()) {
             inc_stat_field(failed_add[PURGATORY_OFF]);
@@ -199,24 +228,25 @@ int purgatory_add_se(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
 
     lockdep_assert_rq_held(cfs_rq->rq);
 
-
     now = rq_clock(cfs_rq->rq);
 
     /* First we set-up se fields */
     se->purgatory.blocked_timestamp = now;
     se->purgatory.cfs_rq = cfs_rq;
-
+    se->purgatory.saved_avg_load = se->avg.load_avg;
     se->purgatory.saved_load = se->load.weight;
-    // update_load_add(&cfs_rq->load, se->purgatory.saved_load);
-    cfs_rq->load.weight += se->purgatory.saved_load;
+    update_load_add(&cfs_rq->load, se->purgatory.saved_load);
 
     /* Then we set-up rq fields */
     list_add_tail(&se->purgatory.tasks, &cfs_rq->purgatory.tasks);
-    
+    cfs_rq->purgatory.blocked_avg_load = se->purgatory.saved_avg_load;    
     cfs_rq->purgatory.nr++;
     cfs_rq->purgatory.blocked_load += se->purgatory.saved_load;
     
+    trace_purgatory_load(cfs_rq);
     trace_purgatory(cfs_rq, 0, now);
+
+    inc_stat_field(success_add);
     return 1;
 }
 
@@ -238,21 +268,23 @@ void purgatory_remove_se(struct cfs_rq *cfs_rq, struct sched_entity *se)
 
 #ifdef SCHED_PURGATORY_DEBUG
     if (cfs_rq != se->purgatory.cfs_rq)
-        BUG();
+        return;
 #endif
 
     lockdep_assert_rq_held(cfs_rq->rq);
 
-    update_load_add(&cfs_rq->load, se->purgatory.saved_load);
+    update_load_sub(&cfs_rq->load, se->purgatory.saved_load);
     cfs_rq->purgatory.blocked_load -= se->purgatory.saved_load;
     cfs_rq->purgatory.nr--;
+    cfs_rq->purgatory.blocked_avg_load -= se->purgatory.saved_avg_load;
 
+    se->purgatory.saved_avg_load = 0;
     se->purgatory.blocked_timestamp = 0;
     se->purgatory.saved_load = 0;
     se->purgatory.cfs_rq = NULL;
 
     list_del_init_careful(&se->purgatory.tasks);
-
+    trace_purgatory_load(cfs_rq);
 }
 
 /*
@@ -310,6 +342,18 @@ int purgatory_try_to_remove_se(struct cfs_rq *cfs_rq, struct sched_entity *se,
     return 1;
 }
 
+void purgatory_do_task_dead(struct task_struct *p)
+{
+    struct rq_flags rf;
+    struct  sched_entity *se = &p->se;
+    struct cfs_rq *cfs_rq = se->purgatory.cfs_rq;
+    if (!se->purgatory.blocked_timestamp)
+        return;
+    rq_lock_irq(rq_of(cfs_rq), &rf);
+    purgatory_remove_se(cfs_rq, se);
+    rq_unlock_irq(rq_of(cfs_rq), &rf);
+
+}
 
 /*
     Main update function. This will iterate through the 
@@ -363,6 +407,7 @@ int purgatory_update(struct cfs_rq *cfs_rq)
     }
 
     trace_purgatory(cfs_rq, 0, now);
+    trace_purgatory_load(cfs_rq);
     add_stat_field(update_removed, nr_removed);
     
     cfs_rq->purgatory.next_update = now + nr_removed ? purgatory_update_delta_ns : purgatory_update_delta_ns * 2;
@@ -392,7 +437,7 @@ void purgatory_clear(struct cfs_rq *cfs_rq)
     list_for_each_entry_safe(pos, tmp, &cfs_rq->purgatory.tasks, purgatory.tasks) {
         purgatory_remove_se(cfs_rq, pos);
     }
-
+    trace_purgatory_load(cfs_rq);
     trace_purgatory(cfs_rq, 0, 0);
 }
 
@@ -410,6 +455,12 @@ static int pshow(struct seq_file *m, void *p)
         seq_printf(m, "update calls    : %llu\n", curr_stats->update_calls);
         seq_printf(m, "update removed  : %llu\n", curr_stats->update_removed);
         seq_printf(m, "update too soon : %llu\n", curr_stats->update_too_soon);
+        seq_printf(m, "insert calls : %llu\n", curr_stats->insert_calls);
+        seq_printf(m, "insert err. ts set : %llu\n", curr_stats->failed_add[TIMESTAMP_SET]);
+        seq_printf(m, "insert err. not sleeping : %llu\n", curr_stats->failed_add[TASK_NOT_SLEEPING]);
+        seq_printf(m, "success add : %llu\n", curr_stats->success_add);
+
+        
 	}
 	return 0;
 }
@@ -440,9 +491,8 @@ static int dump_rqs_info(struct seq_file *m, void *p)
 static int dump_purgatory_cfg(struct seq_file *m, void *p)
 {
     seq_printf(m, "Purgatory version :\n");
-    seq_printf(m, "purgatory_duration : %d", purgatory_duration);
-    seq_printf(m, "clear_on_idle : %d", purgatory_clear_on_idle);
-
+    seq_printf(m, "purgatory_duration : %d\t", purgatory_duration);
+    seq_printf(m, "clear_on_idle : %d\t", purgatory_clear_on_idle);
     return 0;
 }
 /* End of debug functions */

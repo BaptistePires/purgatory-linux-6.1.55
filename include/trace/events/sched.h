@@ -763,7 +763,36 @@ TRACE_EVENT(sched_purgatory_change,
         TP_printk("cpu=%d nr_running=%lu purgatory_size=%lu blocked_load=%lu total_load=%lu load_avg=%lu event=%u ts=%lu",
                 __entry->cpu, __entry->size, __entry->psize, __entry->blocked_load, __entry->total_load, __entry->load_avg, __entry->event, __entry->ts)
 );
+
+TRACE_EVENT(sched_purgatory_load,
+	TP_PROTO(int cpu, unsigned long load, unsigned long pload, unsigned long avg_load, unsigned long pavg_load, unsigned long nr_running, unsigned long nr_purgatory),
+	TP_ARGS(cpu, load, pload, avg_load, pavg_load, nr_running, nr_purgatory),
+	TP_STRUCT__entry(
+		__field(int, cpu)
+		__field(unsigned long, load)
+		__field(unsigned long, pload)
+		__field(unsigned long, avg_load)
+		__field(unsigned long, pavg_load)
+		__field(unsigned long, nr_running)
+		__field(unsigned long, nr_purgatory)
+	),
+
+	TP_fast_assign(
+		__entry->cpu = cpu;
+		__entry->load = load;
+		__entry->pload = pload;
+		__entry->avg_load = avg_load;
+		__entry->pavg_load = pavg_load;
+		__entry->nr_running = nr_running;
+		__entry->nr_purgatory = nr_purgatory;
+	),
+
+	TP_printk("%d %lu %lu %lu %lu %lu %lu", __entry->cpu, __entry->load, __entry->pload, __entry->avg_load, __entry->pavg_load, __entry->nr_running, __entry->nr_purgatory)
+);
+
 #endif /* _TRACE_SCHED_H */
+
+
 
 /* This part must be outside protection */
 #include <trace/define_trace.h>
