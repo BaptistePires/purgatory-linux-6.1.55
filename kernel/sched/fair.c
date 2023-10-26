@@ -4029,6 +4029,8 @@ update_cfs_rq_load_avg(u64 now, struct cfs_rq *cfs_rq)
 	struct sched_avg *sa = &cfs_rq->avg;
 	int decayed = 0;
 
+	purgatory_update(cfs_rq);
+
 	if (cfs_rq->removed.nr) {
 		unsigned long r;
 		u32 divider = get_pelt_divider(&cfs_rq->avg);
@@ -6109,7 +6111,8 @@ enqueue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 	int task_new = !(flags & ENQUEUE_WAKEUP);
 
 
-	if (se->purgatory.blocked_timestamp) purgatory_remove_se(&rq->cfs, se);
+	if (se->purgatory.blocked_timestamp)
+		purgatory_remove_se(&rq->cfs, se);
 	/*
 	 * The code below (indirectly) updates schedutil which looks at
 	 * the cfs_rq utilization to select a frequency.
@@ -7495,6 +7498,8 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int wake_flags)
 	if (wake_flags & WF_TTWU) {
 		record_wakee(p);
 
+
+
 		if (sched_energy_enabled()) {
 			new_cpu = find_energy_efficient_cpu(p, prev_cpu);
 			if (new_cpu >= 0)
@@ -7548,7 +7553,7 @@ select_task_rq_fair(struct task_struct *p, int prev_cpu, int wake_flags)
  * cfs_rq_of(p) references at time of call are still valid and identify the
  * previous CPU. The caller guarantees p->pi_lock or task_rq(p)->lock is held.
  */
-static void migrate_task_rq_fair(struct task_struct *p, int new_cpu)
+static void  migrate_task_rq_fair(struct task_struct *p, int new_cpu)
 {
 	struct sched_entity *se = &p->se;
 
@@ -12488,7 +12493,6 @@ DEFINE_SCHED_CLASS(fair) = {
 
 	.task_tick		= task_tick_fair,
 	.task_fork		= task_fork_fair,
-
 	.prio_changed		= prio_changed_fair,
 	.switched_from		= switched_from_fair,
 	.switched_to		= switched_to_fair,

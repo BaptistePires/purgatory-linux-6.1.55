@@ -39,6 +39,7 @@ enum failed_add_type {
     PURGATORY_OFF = 0,
     TASK_NOT_SLEEPING,
     TIMESTAMP_SET,
+    TAGGED_BY_REMOTE,
     FAILED_ADD_END
 };
 struct purgatory_stats {
@@ -150,6 +151,8 @@ void purgatory_init_se(struct sched_entity *se)
     se->purgatory.blocked_timestamp = 0;
     se->purgatory.cfs_rq = NULL;
     se->purgatory.saved_load = 0;
+    se->purgatory.out = 0;
+    se->purgatory.saved_avg_load = 0;
 }
 
 /*
@@ -164,7 +167,7 @@ void purgatory_init_cfs_rq(struct cfs_rq *cfs_rq)
 	INIT_LIST_HEAD(&cfs_rq->purgatory.tasks);
 	cfs_rq->purgatory.nr = 0;
 	cfs_rq->purgatory.blocked_load = 0;
-    cfs_rq->purgatory.next_update = 0;
+    cfs_rq->purgatory.next_update = jiffies;
 }
 
 /* Duplicated from fair.c as they are static */
@@ -214,7 +217,7 @@ int purgatory_add_se(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
     inc_stat_field(insert_calls);
 
 
-    if (!purgatory_activated() || se->purgatory.blocked_timestamp || !(flags & DEQUEUE_SLEEP)) {
+    if (!purgatory_activated() || se->purgatory.blocked_timestamp || !(flags & DEQUEUE_SLEEP) || se->purgatory.out) {
 
         if (!purgatory_activated()) {
             inc_stat_field(failed_add[PURGATORY_OFF]);
@@ -222,6 +225,8 @@ int purgatory_add_se(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
             inc_stat_field(failed_add[TIMESTAMP_SET]);
         } else if (!(flags & DEQUEUE_SLEEP)) {
             inc_stat_field(failed_add[TASK_NOT_SLEEPING]);
+        } else if(se->purgatory.out) {
+            inc_stat_field(failed_add[TAGGED_BY_REMOTE]);
         }
         return 0;
     }
@@ -266,10 +271,10 @@ void purgatory_remove_se(struct cfs_rq *cfs_rq, struct sched_entity *se)
     __must_hold(cfs_rq->rq->__lock)
 {
 
-#ifdef SCHED_PURGATORY_DEBUG
-    if (cfs_rq != se->purgatory.cfs_rq)
+    if (cfs_rq != se->purgatory.cfs_rq){
+        se->purgatory.out = 1;
         return;
-#endif
+    }
 
     lockdep_assert_rq_held(cfs_rq->rq);
 
@@ -303,7 +308,7 @@ void purgatory_remove_se(struct cfs_rq *cfs_rq, struct sched_entity *se)
 */
 inline int purgatory_can_remove_se(struct sched_entity *se, u64 now)
 {
-    return (now - se->purgatory.blocked_timestamp) > purgatory_duration;
+    return se->purgatory.out || (now - se->purgatory.blocked_timestamp) > purgatory_duration;
 }
 
 /*
@@ -380,6 +385,7 @@ int purgatory_update(struct cfs_rq *cfs_rq)
     struct sched_entity *pos, *tmp;
     int nr_removed = 0;
     u64 now = rq_clock(cfs_rq->rq);
+
 
     /* 
         Here we don't check if the purgatory if deactivated
@@ -458,7 +464,10 @@ static int pshow(struct seq_file *m, void *p)
         seq_printf(m, "insert calls : %llu\n", curr_stats->insert_calls);
         seq_printf(m, "insert err. ts set : %llu\n", curr_stats->failed_add[TIMESTAMP_SET]);
         seq_printf(m, "insert err. not sleeping : %llu\n", curr_stats->failed_add[TASK_NOT_SLEEPING]);
+        seq_printf(m, "insert err. tagged remote : %llu\n", curr_stats->failed_add[TAGGED_BY_REMOTE]);
         seq_printf(m, "success add : %llu\n", curr_stats->success_add);
+
+        
 
         
 	}

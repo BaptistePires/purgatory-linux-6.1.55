@@ -585,6 +585,7 @@ struct sched_entity {
 		struct cfs_rq *cfs_rq;
 		unsigned long saved_load;
 		unsigned long saved_avg_load;
+		int out;
 	} purgatory;
 };
 
