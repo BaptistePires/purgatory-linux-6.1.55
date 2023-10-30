@@ -392,8 +392,8 @@ int purgatory_update(struct cfs_rq *cfs_rq)
         because if do deactivate it and some tasks remain
         in it, we need to remove them.
     */
-    if (!cfs_rq->purgatory.nr || !purgatory_activated() || (now - cfs_rq->purgatory.next_update) > 0) {
-        if ((now - cfs_rq->purgatory.next_update) > 0)
+    if (!cfs_rq->purgatory.nr || !purgatory_activated() || now < cfs_rq->purgatory.next_update) {
+        if (now < cfs_rq->purgatory.next_update)
             inc_stat_field(update_too_soon);
 
         return 0;
@@ -416,7 +416,7 @@ int purgatory_update(struct cfs_rq *cfs_rq)
     trace_purgatory_load(cfs_rq);
     add_stat_field(update_removed, nr_removed);
     
-    cfs_rq->purgatory.next_update = now + nr_removed ? purgatory_update_delta_ns : purgatory_update_delta_ns * 2;
+    cfs_rq->purgatory.next_update = now + (nr_removed ? purgatory_update_delta_ns : purgatory_update_delta_ns * 2);
 
     return nr_removed;
 }
@@ -488,6 +488,7 @@ static int dump_rqs_info(struct seq_file *m, void *p)
         seq_printf(m, "nr_purgatory %lu\n", rq->purgatory.nr);
         seq_printf(m, "nr_running %d\n", rq->nr_running);
         seq_printf(m, "h_nr_running %d\n", rq->h_nr_running);
+        seq_printf(m, "purgatory.next_update %llu\n", rq->purgatory.next_update);
         seq_printf(m, "purgatory.tasks %p\n", &rq->purgatory.tasks);
         seq_printf(m, "purgatory.tasks.next %p\n", rq->purgatory.tasks.next);
         seq_printf(m, "purgatory.tasks.prev %p\n", rq->purgatory.tasks.prev);

@@ -885,7 +885,7 @@ static void update_curr(struct cfs_rq *cfs_rq)
 	u64 now = rq_clock_task(rq_of(cfs_rq));
 	u64 delta_exec;
 
-	
+	purgatory_update(cfs_rq);
 	if (unlikely(!curr))
 		return;
 
@@ -4246,11 +4246,9 @@ static void sync_entity_load_avg(struct sched_entity *se)
 static void remove_entity_load_avg(struct sched_entity *se)
 {
 	struct cfs_rq *cfs_rq = cfs_rq_of(se);
-	unsigned long purgatory_weight = 0;
 	unsigned long flags;
 
-	if (se->purgatory.blocked_timestamp)
-		purgatory_weight = se->purgatory.saved_load;
+
 	/*
 	 * tasks cannot exit without having gone through wake_up_new_task() ->
 	 * enqueue_task_fair() which will have added things to the cfs_rq,
@@ -4264,7 +4262,7 @@ static void remove_entity_load_avg(struct sched_entity *se)
 	cfs_rq->removed.util_avg	+= se->avg.util_avg;
 	cfs_rq->removed.load_avg	+= se->avg.load_avg;
 	cfs_rq->removed.runnable_avg	+= se->avg.runnable_avg;
-	cfs_rq->removed.purgatory_weight += purgatory_weight;
+
 	raw_spin_unlock_irqrestore(&cfs_rq->removed.lock, flags);
 }
 
