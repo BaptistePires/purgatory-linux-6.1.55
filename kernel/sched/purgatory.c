@@ -153,6 +153,10 @@ void purgatory_init_se(struct sched_entity *se)
     se->purgatory.saved_load = 0;
     se->purgatory.out = 0;
     se->purgatory.saved_avg_load = 0;
+    se->purgatory.stats.added = 0;
+    se->purgatory.stats.left_early = 0;
+    se->purgatory.stats.timed_out = 0;
+    se->purgatory.stats.removed_by_clear = 0;
 }
 
 /*
@@ -251,6 +255,7 @@ int purgatory_add_se(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
     trace_purgatory_load(cfs_rq);
     trace_purgatory(cfs_rq, 0, now);
 
+    se->purgatory.stats.added++;
     inc_stat_field(success_add);
     return 1;
 }
@@ -265,7 +270,7 @@ int purgatory_add_se(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
         - purgatory_clear
         - dequeue_task_fair
     Requirements :
-        - locks : old the @cfs_rq->rq lock
+        - locks : old the @cfs_rq->rq lock²
 */
 void purgatory_remove_se(struct cfs_rq *cfs_rq, struct sched_entity *se)
     __must_hold(cfs_rq->rq->__lock)
@@ -338,6 +343,8 @@ int purgatory_try_to_remove_se(struct cfs_rq *cfs_rq, struct sched_entity *se,
 #endif
 
     if (purgatory_can_remove_se(se, now)) {
+        if (!se->purgatory.out)
+            se->purgatory.stats.timed_out++;
         purgatory_remove_se(cfs_rq, se);
     } else {
         return 0;
@@ -357,6 +364,7 @@ void purgatory_do_task_dead(struct task_struct *p)
     rq_lock_irq(rq_of(cfs_rq), &rf);
     purgatory_remove_se(cfs_rq, se);
     rq_unlock_irq(rq_of(cfs_rq), &rf);
+    // se->purgatory.stats.timed_out++;
 
 }
 
@@ -441,6 +449,7 @@ void purgatory_clear(struct cfs_rq *cfs_rq)
         return;
 
     list_for_each_entry_safe(pos, tmp, &cfs_rq->purgatory.tasks, purgatory.tasks) {
+        pos->purgatory.stats.removed_by_clear++;
         purgatory_remove_se(cfs_rq, pos);
     }
     trace_purgatory_load(cfs_rq);

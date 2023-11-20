@@ -6109,8 +6109,10 @@ enqueue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 	int task_new = !(flags & ENQUEUE_WAKEUP);
 
 
-	if (se->purgatory.blocked_timestamp)
+	if (se->purgatory.blocked_timestamp && !se->purgatory.out) {
 		purgatory_remove_se(&rq->cfs, se);
+		se->purgatory.stats.left_early++;
+	}
 	/*
 	 * The code below (indirectly) updates schedutil which looks at
 	 * the cfs_rq utilization to select a frequency.
@@ -6212,8 +6214,9 @@ static void dequeue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 		1. During a migration
 		2.
 	*/
-	if (se->purgatory.blocked_timestamp) {
+	if (se->purgatory.blocked_timestamp && !se->purgatory.out) {
 		purgatory_remove_se(&rq->cfs, se);
+		se->purgatory.stats.left_early++;
 	} else {
 		if (!(p->on_rq & TASK_ON_RQ_MIGRATING) && !(state & TASK_DEAD) && flags & DEQUEUE_SLEEP)
 			purgatory_add_se(&rq->cfs, se, flags);

@@ -586,6 +586,20 @@ struct sched_entity {
 		unsigned long saved_load;
 		unsigned long saved_avg_load;
 		int out;
+
+		/*
+			Struct to get stats on tasks in the 
+			purgatory.
+		*/
+		struct {
+			u32 added;
+			/* Task has exceeded the max. time inside the purgatory. */
+			u32 timed_out;
+
+			/* Woke up before spending max. time inside the purgatory. */
+			u32 left_early;
+			u32 removed_by_clear;
+		} stats;
 	} purgatory;
 };
 
