@@ -3877,7 +3877,7 @@ static inline int propagate_entity_load_avg(struct sched_entity *se)
 
 	trace_pelt_cfs_tp(cfs_rq);
 	trace_pelt_se_tp(se);
-
+	trace_sched_cfs_load_change(cfs_rq->rq->cpu, cfs_rq->load.weight, cfs_rq->avg.load_avg);
 	return 1;
 }
 
@@ -4025,7 +4025,7 @@ static void migrate_se_pelt_lag(struct sched_entity *se) {}
 static inline int
 update_cfs_rq_load_avg(u64 now, struct cfs_rq *cfs_rq)
 {
-	unsigned long removed_load = 0, removed_util = 0, removed_runnable = 0, removed_pweight = 0;
+	unsigned long removed_load = 0, removed_util = 0, removed_runnable = 0;
 	struct sched_avg *sa = &cfs_rq->avg;
 	int decayed = 0;
 
@@ -4039,7 +4039,6 @@ update_cfs_rq_load_avg(u64 now, struct cfs_rq *cfs_rq)
 		swap(cfs_rq->removed.util_avg, removed_util);
 		swap(cfs_rq->removed.load_avg, removed_load);
 		swap(cfs_rq->removed.runnable_avg, removed_runnable);
-		swap(cfs_rq->removed.purgatory_weight, removed_pweight);
 		cfs_rq->removed.nr = 0;
 		raw_spin_unlock(&cfs_rq->removed.lock);
 
@@ -4143,6 +4142,7 @@ static void attach_entity_load_avg(struct cfs_rq *cfs_rq, struct sched_entity *s
 	cfs_rq_util_change(cfs_rq, 0);
 
 	trace_pelt_cfs_tp(cfs_rq);
+	trace_sched_cfs_load_change(cfs_rq->rq->cpu, cfs_rq->load.weight, cfs_rq->avg.load_avg);
 }
 
 /**
@@ -4173,6 +4173,7 @@ static void detach_entity_load_avg(struct cfs_rq *cfs_rq, struct sched_entity *s
 	cfs_rq_util_change(cfs_rq, 0);
 
 	trace_pelt_cfs_tp(cfs_rq);
+	trace_sched_cfs_load_change(cfs_rq->rq->cpu, cfs_rq->load.weight, cfs_rq->avg.load_avg);
 }
 
 /*

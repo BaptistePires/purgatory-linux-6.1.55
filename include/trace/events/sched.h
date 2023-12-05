@@ -695,6 +695,7 @@ DECLARE_TRACE(pelt_cfs_tp,
 	TP_PROTO(struct cfs_rq *cfs_rq),
 	TP_ARGS(cfs_rq));
 
+
 DECLARE_TRACE(pelt_rt_tp,
 	TP_PROTO(struct rq *rq),
 	TP_ARGS(rq));
@@ -735,6 +736,23 @@ DECLARE_TRACE(sched_update_nr_running_tp,
 	TP_PROTO(struct rq *rq, int change),
 	TP_ARGS(rq, change));
 
+
+TRACE_EVENT(sched_cfs_load_change, 
+	TP_PROTO(int cpu, unsigned long load, unsigned long load_avg),
+	TP_ARGS(cpu, load, load_avg),
+	TP_STRUCT__entry(
+		__field(int, cpu)
+		__field(unsigned long, load)
+		__field(unsigned long, load_avg)
+	),
+	TP_fast_assign(
+		__entry->cpu = cpu;
+		__entry->load = load;
+		__entry->load_avg = load_avg;
+	),
+	TP_printk("cpu=%d load=%lu load_avg=%lu", __entry->cpu, __entry->load, __entry->load_avg)
+);
+	
 /* Purgatory traceing function */
 TRACE_EVENT(sched_purgatory_change,
         TP_PROTO(int cpu, unsigned int size, unsigned int psize, unsigned long blocked_load, unsigned total_load, unsigned long load_avg, unsigned int event, unsigned long ts),

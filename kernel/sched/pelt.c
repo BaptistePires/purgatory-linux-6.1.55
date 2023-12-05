@@ -326,6 +326,7 @@ int __update_load_avg_cfs_rq(u64 now, struct cfs_rq *cfs_rq)
 
 		___update_load_avg(&cfs_rq->avg, 1);
 		trace_pelt_cfs_tp(cfs_rq);
+		trace_sched_cfs_load_change(cfs_rq->rq->cpu, cfs_rq->load.weight, cfs_rq->avg.load_avg);
 		return 1;
 	}
 
