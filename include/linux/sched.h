@@ -581,6 +581,7 @@ struct sched_entity {
 
 	struct {
 		u64 blocked_timestamp;
+		unsigned int purgatory_pos;
 		struct list_head tasks;
 		struct cfs_rq *cfs_rq;
 		unsigned long saved_load;
