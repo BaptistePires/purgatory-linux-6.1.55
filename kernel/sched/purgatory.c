@@ -82,7 +82,7 @@ static __read_mostly u64 purgatory_update_delta_ns = 100000;
 static __read_mostly unsigned int purgatory_size = 8;
 
 struct per_cpu_purgatory {
-    unsigned long bitmap;
+    // unsigned long bitmap;
     struct sched_entity *entries[0];
 };
 
@@ -91,9 +91,9 @@ struct per_cpu_purgatory __percpu *per_cpu_purgatory;
 int __purgatory_alloc_per_cpu(void)
 {
     int cpu;
-    pr_info("alloc_se : %lu\n", sizeof (struct per_cpu_purgatory) + purgatory_size * sizeof (per_cpu_purgatory->entries));
-    per_cpu_purgatory = __alloc_percpu(sizeof (struct per_cpu_purgatory) 
-                                + purgatory_size * sizeof (per_cpu_purgatory->entries), 
+    unsigned int i;
+    pr_info("alloc_se : %lu\n",  purgatory_size * sizeof (per_cpu_purgatory->entries));
+    per_cpu_purgatory = __alloc_percpu(purgatory_size * sizeof (unsigned long), 
                                 __alignof__ (struct per_cpu_purgatory));
     
     if (!per_cpu_purgatory) {
@@ -103,7 +103,8 @@ int __purgatory_alloc_per_cpu(void)
 
     for_each_possible_cpu(cpu) {
         struct per_cpu_purgatory *pcpu_p = per_cpu_ptr(per_cpu_purgatory, cpu);
-        pr_info("[purgatory] cpu %d bitmap : %lu\n", cpu, pcpu_p->bitmap);
+        for(i = 0; i < purgatory_size; ++i)
+            pcpu_p->entries[i] = NULL;
     }
 
     return 0;
@@ -116,26 +117,26 @@ void __purgatory__free_per_cpu(void)
 
 int __purgatory_add_to_rq(struct cfs_rq *cfs_rq, struct sched_entity *se)
 {
-    int first_free_entry;
+    int first_free_entry = 0;
     struct per_cpu_purgatory *pcpu_p = per_cpu_ptr(per_cpu_purgatory, cfs_rq->rq->cpu);
-    if (bitmap_full(&pcpu_p->bitmap, purgatory_size))
-        return 0;
-
-    first_free_entry = ffz(pcpu_p->bitmap);
     
-    if (first_free_entry >= purgatory_size)
-        return 0;
+    for (; first_free_entry < purgatory_size; ++first_free_entry)
+        if (pcpu_p->entries[first_free_entry] == NULL) break;
+
+    if (first_free_entry == purgatory_size)
+        goto out;
 
     pcpu_p->entries[first_free_entry] = se;
     se->purgatory.purgatory_pos = first_free_entry;
-    bitmap_set(&pcpu_p->bitmap, se->purgatory.purgatory_pos, 1);
+
+out:
     return 1;
 }
 
 void __purgatory_remove_from_rq(struct cfs_rq *cfs_rq, struct sched_entity *se)
 {
     struct per_cpu_purgatory *pcpu_p = per_cpu_ptr(per_cpu_purgatory, cfs_rq->rq->cpu);
-    bitmap_clear(&pcpu_p->bitmap, se->purgatory.purgatory_pos, 1);
+    pcpu_p->entries[se->purgatory.purgatory_pos] = NULL;
 }
 
 static DEFINE_PER_CPU(struct purgatory_stats, pstats);
@@ -312,7 +313,7 @@ int purgatory_add_se(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
     u64 now;
     inc_stat_field(insert_calls);
 
-    if (!purgatory_activated() || se->purgatory.blocked_timestamp || !(flags & DEQUEUE_SLEEP) || se->purgatory.out) {
+    if (!purgatory_activated() || se->purgatory.blocked_timestamp || !(flags & DEQUEUE_SLEEP) || se->purgatory.out || cfs_rq->purgatory.nr == purgatory_size) {
 
         if (!purgatory_activated()) {
             inc_stat_field(failed_add[PURGATORY_OFF]);
@@ -511,9 +512,9 @@ int purgatory_update(struct cfs_rq *cfs_rq)
     
     pos = *pcpu_p->entries;
     for(i = 0; i < purgatory_size; ++pos, ++i) {
-        if (!(pcpu_p->bitmap & (1<<i))) continue;
+        if (!pcpu_p->entries[i]) continue;
     // list_for_each_entry_safe(pos, tmp, &cfs_rq->purgatory.tasks, purgatory.tasks) {
-        if (purgatory_try_to_remove_se(cfs_rq, pos, now)) {
+        if (purgatory_try_to_remove_se(cfs_rq, pcpu_p->entries[i], now)) {
             nr_removed++;
         } else {
             break;
@@ -551,10 +552,10 @@ void purgatory_clear(struct cfs_rq *cfs_rq)
         return;
 
     pos = *pcpu_p->entries;
-    for(i = 0; i < purgatory_size; ++pos, ++i) {
-        if (!(pcpu_p->bitmap & (1<<i))) continue;
+    for(i = 0; i < purgatory_size; ++i) {
+        if (!pcpu_p->entries[i]) continue;
         pos->purgatory.stats.removed_by_clear++;
-        purgatory_remove_se(cfs_rq, pos);
+        purgatory_remove_se(cfs_rq, pcpu_p->entries[i]);
     }
     trace_purgatory_load(cfs_rq);
     trace_purgatory(cfs_rq, 0, 0);
@@ -590,8 +591,10 @@ static int dump_rqs_info(struct seq_file *m, void *p)
 {
     int cpu;
     struct cfs_rq *rq;
+    struct per_cpu_purgatory *pcpu_p;
     for_each_possible_cpu(cpu) {
         rq = &cpu_rq(cpu)->cfs;
+        pcpu_p = per_cpu_ptr(per_cpu_purgatory, cpu);
         seq_printf(m, "+--------------------+\n");
         seq_printf(m, "cpu %d\n", cpu);
         seq_printf(m, "avg_load %lu\n", rq->avg.load_avg);
@@ -602,9 +605,9 @@ static int dump_rqs_info(struct seq_file *m, void *p)
         seq_printf(m, "nr_running %d\n", rq->nr_running);
         seq_printf(m, "h_nr_running %d\n", rq->h_nr_running);
         seq_printf(m, "purgatory.next_update %llu\n", rq->purgatory.next_update);
-        seq_printf(m, "purgatory.tasks %p\n", &rq->purgatory.tasks);
-        seq_printf(m, "purgatory.tasks.next %p\n", rq->purgatory.tasks.next);
-        seq_printf(m, "purgatory.tasks.prev %p\n", rq->purgatory.tasks.prev);
+
+        for (int i = 0; i < purgatory_size; i ++)
+            seq_printf(m, "pcpus_p->entries[i] :  %p\n", pcpu_p->entries[i]);
 
     }
 
