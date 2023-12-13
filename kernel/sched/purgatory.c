@@ -92,6 +92,10 @@ int __purgatory_alloc_per_cpu(void)
 {
     int cpu;
     unsigned int i;
+    if (per_cpu_purgatory) {
+        pr_warn("[Purgatory] per_cpu_purgatory already allocated\n");
+        return 0;
+    }
     pr_info("alloc_se : %lu\n",  purgatory_size * sizeof (per_cpu_purgatory->entries));
     per_cpu_purgatory = __alloc_percpu(purgatory_size * sizeof (unsigned long), 
                                 __alignof__ (struct per_cpu_purgatory));
@@ -111,10 +115,10 @@ int __purgatory_alloc_per_cpu(void)
 }
 void __purgatory__free_per_cpu(void)
 {
-    if (purgatory_on) {
-        purgatory_on = 0;
+    if (per_cpu_purgatory) {
         purgatory_clear_all_queues();
         free_percpu(per_cpu_purgatory);
+        per_cpu_purgatory= NULL;
     }
         
 }
@@ -149,30 +153,33 @@ ssize_t purgatory_on_fs_write(struct file *file, const char __user *user_buf,
 				size_t count, loff_t *ppos)
 {
 	ssize_t ret;
-    bool next_purgatory_on_value;
-    
-    ret = (ssize_t) kstrtobool_from_user(user_buf, count, &next_purgatory_on_value);
-    
-    if (ret == -EFAULT) {
-        pr_info("[Purgatory] Error while reading user input.");
-        goto out;
-    }
-    
-    if (next_purgatory_on_value == purgatory_on)
-        goto out;
+    bool old_value = purgatory_on;
 
-    /* Purgatory is turning on */
-    if (next_purgatory_on_value) {
-        if ((ret = __purgatory_alloc_per_cpu()))
-            goto out;
-    } else {
+    /* purgatory is on*/
+    if (old_value) {
+        pr_info("old_value ok\n");
+        ret = debugfs_write_file_bool(file, user_buf, count, ppos);
+        pr_info("ret : %ld\n", ret);
+        /* True to false */
+        if (old_value == purgatory_on) {
+            return ret;
+        }
+        purgatory_clear_all_queues();
         __purgatory__free_per_cpu();
-    }
-        
-	ret = debugfs_write_file_bool(file, user_buf, count, ppos);
+    } else {
+        pr_info("old_value not_ok\n");
+        /* purgatory is off */
+        __purgatory_alloc_per_cpu();
 
-out:
-	return ret;
+        ret = debugfs_write_file_bool(file, user_buf, count, ppos);
+
+        if (!purgatory_on) {
+            __purgatory__free_per_cpu();
+        }
+    }
+
+    return ret;
+
 }
 static const struct file_operations fops_purgatory_on = {
     .write = purgatory_on_fs_write,
@@ -552,9 +559,6 @@ void purgatory_clear(struct cfs_rq *cfs_rq)
     struct per_cpu_purgatory *pcpu_p = per_cpu_ptr(per_cpu_purgatory, cfs_rq->rq->cpu);
 
     lockdep_assert_rq_held(cfs_rq->rq);
-
-    if (!cfs_rq->purgatory.nr)
-        return;
 
     pos = *pcpu_p->entries;
     for(i = 0; i < purgatory_size; ++i) {
