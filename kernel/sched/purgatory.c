@@ -111,8 +111,12 @@ int __purgatory_alloc_per_cpu(void)
 }
 void __purgatory__free_per_cpu(void)
 {
-    if (purgatory_on)
+    if (purgatory_on) {
+        purgatory_on = 0;
+        purgatory_clear_all_queues();
         free_percpu(per_cpu_purgatory);
+    }
+        
 }
 
 int __purgatory_add_to_rq(struct cfs_rq *cfs_rq, struct sched_entity *se)
