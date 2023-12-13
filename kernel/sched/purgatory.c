@@ -290,6 +290,7 @@ void purgatory_clear_all_queues(void)
 {
     int cpu;
     struct rq_flags rf;
+    if (!per_cpu_purgatory) return;
     for_each_possible_cpu(cpu) {
         struct rq *rq = cpu_rq(cpu);
         rq_lock_irq(rq, &rf);
