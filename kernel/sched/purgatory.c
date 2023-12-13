@@ -208,6 +208,7 @@ static __init int init_purgatory_fs(void)
         &fops_purgatory_on);
     debugfs_create_bool("purgatory_clear_on_idle", 0644, NULL, &purgatory_clear_on_idle);
     debugfs_create_u32("purgatory_duration", 0644, NULL, &purgatory_duration);
+    debugfs_create_u32("purgatory_size", 0644, NULL, &purgatory_size);
     debugfs_create_file("purgatory_clear", 0644, NULL, &clear_purgatory_debugfs,
         &fops_purgatory_clear);
 #ifdef SCHED_PURGATORY_STATS 
