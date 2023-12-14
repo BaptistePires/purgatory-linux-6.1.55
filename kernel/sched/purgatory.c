@@ -1,3 +1,4 @@
+#include "asm-generic/rwonce.h"
 #include "asm/cache.h"
 #include "linux/bitmap.h"
 #include "linux/cpumask.h"
@@ -75,9 +76,10 @@ struct purgatory_stats {
     - @purgatory_clear_on_idle : Should we clear the purgatory on a
         runqueue when its core becomes idle.
 */
-static __read_mostly bool purgatory_on = false;
+static __read_mostly unsigned int purgatory_on = false;
+static __read_mostly unsigned int __purgatory_on_fs = false;
 static __read_mostly unsigned int purgatory_duration = 100000;
-static __read_mostly bool purgatory_clear_on_idle = false;
+static __read_mostly unsigned int purgatory_clear_on_idle = false;
 static __read_mostly u64 purgatory_update_delta_ns = 100000;
 static __read_mostly unsigned int purgatory_size = 8;
 
@@ -152,35 +154,37 @@ static DEFINE_PER_CPU(struct purgatory_stats, pstats);
 ssize_t purgatory_on_fs_write(struct file *file, const char __user *user_buf,
 				size_t count, loff_t *ppos)
 {
-	ssize_t ret;
-    bool old_value = purgatory_on;
+    ssize_t ret;
+    ret = debugfs_write_file_bool(file, user_buf, count, ppos);
 
-    /* purgatory is on*/
-    if (old_value) {
-        pr_info("old_value ok\n");
-        ret = debugfs_write_file_bool(file, user_buf, count, ppos);
-        pr_info("ret : %ld\n", ret);
-        /* True to false */
-        if (old_value == purgatory_on) {
-            return ret;
+
+    pr_info("purgatory_on_fs %d\n", __purgatory_on_fs);
+    pr_info("purgatory_on %d\n", purgatory_on);
+    if (__purgatory_on_fs == purgatory_on) {
+        pr_info("same value\n");
+        goto out;
+    }
+    
+    /* turning purgatory on */
+    if (__purgatory_on_fs) {
+        if (__purgatory_alloc_per_cpu()!= 0) {
+            pr_info("mlais il se fou de ma gueule ce putain de code de merde je vais péter un cable vraiment arrete des conneries tas rien a foutre ici pq tu rentre dans ce if\n");
+            goto out;
         }
+        purgatory_on = __purgatory_on_fs;
+        pr_info("purgatory_on_fss %d\n", __purgatory_on_fs);
+        pr_info("purgatory_on %d\n", purgatory_on);
+    } else {
+        /* turning purtaory off */
+        purgatory_on = __purgatory_on_fs;
         purgatory_clear_all_queues();
         __purgatory__free_per_cpu();
-    } else {
-        pr_info("old_value not_ok\n");
-        /* purgatory is off */
-        __purgatory_alloc_per_cpu();
-
-        ret = debugfs_write_file_bool(file, user_buf, count, ppos);
-
-        if (!purgatory_on) {
-            __purgatory__free_per_cpu();
-        }
     }
 
+out:
     return ret;
-
 }
+
 static const struct file_operations fops_purgatory_on = {
     .write = purgatory_on_fs_write,
     .read = debugfs_read_file_bool,
@@ -215,9 +219,9 @@ static int dump_purgatory_cfg(struct seq_file *m, void *p);
 
 static __init int init_purgatory_fs(void)
 {
-    debugfs_create_file("purgatory_on", 0644, NULL, &purgatory_on,
+    debugfs_create_file("purgatory_on", 0644, NULL, &__purgatory_on_fs,
         &fops_purgatory_on);
-    debugfs_create_bool("purgatory_clear_on_idle", 0644, NULL, &purgatory_clear_on_idle);
+    debugfs_create_u32("purgatory_clear_on_idle", 0644, NULL, &purgatory_clear_on_idle);
     debugfs_create_u32("purgatory_duration", 0644, NULL, &purgatory_duration);
     debugfs_create_u32("purgatory_size", 0644, NULL, &purgatory_size);
     debugfs_create_file("purgatory_clear", 0644, NULL, &clear_purgatory_debugfs,
