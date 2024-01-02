@@ -75,7 +75,6 @@ struct purgatory_stats {
         runqueue when its core becomes idle.
 */
 static __read_mostly unsigned int purgatory_on = false;
-static __read_mostly unsigned int __purgatory_on_fs = false;
 static __read_mostly unsigned int purgatory_duration = 100000;
 static __read_mostly unsigned int purgatory_clear_on_idle = false;
 static __read_mostly u64 purgatory_update_delta_ns = 100000;
