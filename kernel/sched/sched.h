@@ -603,6 +603,7 @@ struct cfs_rq {
 	struct {
 		struct list_head tasks;
 		unsigned long nr;
+		unsigned long total_added;
 		unsigned long blocked_load;
 		u64 next_update;
 		unsigned long blocked_avg_load;
