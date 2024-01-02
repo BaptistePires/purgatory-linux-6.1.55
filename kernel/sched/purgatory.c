@@ -205,6 +205,7 @@ void purgatory_init_cfs_rq(struct cfs_rq *cfs_rq)
 	cfs_rq->purgatory.nr = 0;
 	cfs_rq->purgatory.blocked_load = 0;
     cfs_rq->purgatory.next_update = jiffies;
+    cfs_rq->purgatory.total_added = 0;
 }
 
 /* Duplicated from fair.c as they are static */
@@ -296,6 +297,7 @@ int purgatory_add_se(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
     /* Then we set-up rq fields */
     cfs_rq->purgatory.blocked_avg_load = se->purgatory.saved_avg_load;    
     cfs_rq->purgatory.nr++;
+    cfs_rq->purgatory.total_added++;
     cfs_rq->purgatory.blocked_load += se->purgatory.saved_load;
     
     trace_purgatory_load(cfs_rq);
