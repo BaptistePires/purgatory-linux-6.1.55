@@ -486,15 +486,14 @@ int purgatory_update(struct cfs_rq *cfs_rq)
 void purgatory_clear(struct cfs_rq *cfs_rq)
     __must_hold(cfs_rq->rq->__lock)
 {
-    struct sched_entity *pos;
     unsigned int i;
     struct per_cpu_purgatory *pcpu_p = per_cpu_ptr(&per_cpu_purgatory, cfs_rq->rq->cpu);
 
     lockdep_assert_rq_held(cfs_rq->rq);
 
-    pos = *pcpu_p->entries;
-    for(i = 0; i < cfs_rq->purgatory.nr; ++i) {
-        pos->purgatory.stats.removed_by_clear++;
+    for(i = 0; i < purgatory_size; ++i) {
+        if (!pcpu_p->entries[i]) continue;
+        pcpu_p->entries[i]->purgatory.stats.removed_by_clear++;
         purgatory_remove_se(cfs_rq, pcpu_p->entries[i]);
     }
     trace_purgatory_load(cfs_rq);
