@@ -493,8 +493,7 @@ void purgatory_clear(struct cfs_rq *cfs_rq)
     lockdep_assert_rq_held(cfs_rq->rq);
 
     pos = *pcpu_p->entries;
-    for(i = 0; i < purgatory_size; ++i) {
-        if (!pcpu_p->entries[i]) continue;
+    for(i = 0; i < cfs_rq->purgatory.nr; ++i) {
         pos->purgatory.stats.removed_by_clear++;
         purgatory_remove_se(cfs_rq, pcpu_p->entries[i]);
     }
@@ -545,6 +544,7 @@ static int dump_rqs_info(struct seq_file *m, void *p)
         seq_printf(m, "nr_purgatory %lu\n", rq->purgatory.nr);
         seq_printf(m, "nr_running %d\n", rq->nr_running);
         seq_printf(m, "h_nr_running %d\n", rq->h_nr_running);
+        seq_printf(m, "nr_total %lu\n", rq->purgatory.total_added);
         seq_printf(m, "purgatory.next_update %llu\n", rq->purgatory.next_update);
 
         for (int i = 0; i < purgatory_size; i ++)
