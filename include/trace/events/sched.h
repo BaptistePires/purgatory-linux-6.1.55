@@ -827,21 +827,23 @@ TRACE_EVENT(sched_purgatory_size,
 );
 
 TRACE_EVENT(sched_purgatory_task_dead,
-	TP_PROTO(u32 added, u32 timed_out, u32 left_early, u32 removed_by_clear),
-	TP_ARGS(added, timed_out, left_early, removed_by_clear),
+	TP_PROTO(u32 added, u32 timed_out, u32 left_early, u32 removed_by_clear, u32 purgatory_full),
+	TP_ARGS(added, timed_out, left_early, removed_by_clear, purgatory_full),
 	TP_STRUCT__entry(
 		__field(u32, added)
 		__field(u32, timed_out)
 		__field(u32, left_early)
 		__field(u32, removed_by_clear)
+		__field(u32, purgatory_full)
 	),
 	TP_fast_assign(
 		__entry->added = added;
 		__entry->timed_out = timed_out;
 		__entry->left_early = left_early;
 		__entry->removed_by_clear = removed_by_clear;
+		__entry->purgatory_full = purgatory_full;
 	),
-	TP_printk("added=%u timed_out=%u left_early=%u removed_by_clear=%u", __entry->added, __entry->timed_out, __entry->left_early, __entry->removed_by_clear)
+	TP_printk("added=%u timed_out=%u left_early=%u removed_by_clear=%u purgatory_full=%u", __entry->added, __entry->timed_out, __entry->left_early, __entry->removed_by_clear, __entry->purgatory_full)
 );
 #endif /* _TRACE_SCHED_H */
 

@@ -818,7 +818,7 @@ void __noreturn do_exit(long code)
 
 	coredump_task_exit(tsk);
 	ptrace_event(PTRACE_EVENT_EXIT, code);
-	trace_sched_purgatory_task_dead(tsk->se.purgatory.stats.added, tsk->se.purgatory.stats.timed_out, tsk->se.purgatory.stats.left_early, tsk->se.purgatory.stats.removed_by_clear);
+	trace_sched_purgatory_task_dead(tsk->se.purgatory.stats.added, tsk->se.purgatory.stats.timed_out, tsk->se.purgatory.stats.left_early, tsk->se.purgatory.stats.removed_by_clear, tsk->se.purgatory.stats.purgatory_full);
 	validate_creds_for_do_exit(tsk);
 
 	io_uring_files_cancel();

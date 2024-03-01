@@ -600,6 +600,7 @@ struct sched_entity {
 			/* Woke up before spending max. time inside the purgatory. */
 			u32 left_early;
 			u32 removed_by_clear;
+			u32 purgatory_full;
 		} stats;
 	} purgatory;
 };

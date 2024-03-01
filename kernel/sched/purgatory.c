@@ -50,6 +50,7 @@ enum failed_add_type {
     TASK_NOT_SLEEPING,
     TIMESTAMP_SET,
     TAGGED_BY_REMOTE,
+    PURGATORY_FULL,
     FAILED_ADD_END
 };
 struct purgatory_stats {
@@ -191,6 +192,7 @@ void purgatory_init_se(struct sched_entity *se)
     se->purgatory.stats.left_early = 0;
     se->purgatory.stats.timed_out = 0;
     se->purgatory.stats.removed_by_clear = 0;
+    se->purgatory.stats.purgatory_full = 0;
 }
 
 /*
