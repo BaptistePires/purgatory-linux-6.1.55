@@ -26,7 +26,7 @@
 #define trace_purgatory(cfs_rq, event, ts)
 
 #define trace_purgatory_load(cfs_rq) trace_sched_purgatory_load((cfs_rq)->rq->cpu, (cfs_rq)->load.weight, (cfs_rq)->purgatory.blocked_load, (cfs_rq)->avg.load_avg, (cfs_rq)->purgatory.blocked_avg_load, (cfs_rq)->nr_running, (cfs_rq)->purgatory.nr)
-
+#define trace_purgatory_size(cfs_rq) trace_sched_purgatory_size((cfs_rq)->rq->cpu, (cfs_rq)->nr_running, (cfs_rq)->purgatory.nr)
 #ifdef SCHED_PURGATORY_STATS
     #define inc_stat_field(name) \
         per_cpu_ptr(&pstats, smp_processor_id())->name++
@@ -287,6 +287,7 @@ int purgatory_add_se(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
 
     if(!__purgatory_add_to_rq(cfs_rq, se))
         return 0;
+
     /* First we set-up se fields */
     se->purgatory.blocked_timestamp = now;
     se->purgatory.cfs_rq = cfs_rq;
@@ -302,7 +303,7 @@ int purgatory_add_se(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
     
     trace_purgatory_load(cfs_rq);
     trace_purgatory(cfs_rq, 0, now);
-
+    trace_purgatory_size(cfs_rq);
     se->purgatory.stats.added++;
     inc_stat_field(success_add);
     return 1;
@@ -343,6 +344,7 @@ void purgatory_remove_se(struct cfs_rq *cfs_rq, struct sched_entity *se)
     se->purgatory.cfs_rq = NULL;
 
     trace_purgatory_load(cfs_rq);
+    trace_purgatory_size(cfs_rq);
 }
 
 /*
@@ -404,7 +406,8 @@ void purgatory_do_task_dead(struct task_struct *p)
     rq_lock_irq(rq_of(cfs_rq), &rf);
     purgatory_remove_se(cfs_rq, se);
     rq_unlock_irq(rq_of(cfs_rq), &rf);
-    // se->purgatory.stats.timed_out++;
+
+    trace_purgatory_size(cfs_rq);
 
 }
 

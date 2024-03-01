@@ -808,6 +808,24 @@ TRACE_EVENT(sched_purgatory_load,
 	TP_printk("%d %lu %lu %lu %lu %lu %lu", __entry->cpu, __entry->load, __entry->pload, __entry->avg_load, __entry->pavg_load, __entry->nr_running, __entry->nr_purgatory)
 );
 
+TRACE_EVENT(sched_purgatory_size,
+	TP_PROTO(int cpu, unsigned long nr_running, unsigned long nr_purgatory),
+	TP_ARGS(cpu, nr_running, nr_purgatory),
+	TP_STRUCT__entry(
+		__field(int, cpu)
+		__field(unsigned long, nr_running)
+		__field(unsigned long, nr_purgatory)
+	),
+
+	TP_fast_assign(
+		__entry->cpu = cpu;
+		__entry->nr_running = nr_running;
+		__entry->nr_purgatory = nr_purgatory;
+	),
+
+	TP_printk("%d %lu %lu", __entry->cpu, __entry->nr_running, __entry->nr_purgatory)
+);
+
 TRACE_EVENT(sched_purgatory_task_dead,
 	TP_PROTO(u32 added, u32 timed_out, u32 left_early, u32 removed_by_clear),
 	TP_ARGS(added, timed_out, left_early, removed_by_clear),
