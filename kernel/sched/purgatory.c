@@ -21,6 +21,8 @@
 
 #define trace_purgatory_load(cfs_rq) trace_sched_purgatory_load((cfs_rq)->rq->cpu, (cfs_rq)->load.weight, (cfs_rq)->purgatory.blocked_load, (cfs_rq)->avg.load_avg, (cfs_rq)->purgatory.blocked_avg_load, (cfs_rq)->nr_running, (cfs_rq)->purgatory.nr)
 
+#define trace_purgatory_size(cfs_rq) trace_sched_purgatory_size((cfs_rq)->rq->cpu, (cfs_rq)->nr_running, (cfs_rq)->purgatory.nr)
+
 #ifdef SCHED_PURGATORY_STATS
     #define inc_stat_field(name) \
         per_cpu_ptr(&pstats, smp_processor_id())->name++
@@ -251,12 +253,10 @@ int purgatory_add_se(struct cfs_rq *cfs_rq, struct sched_entity *se, int flags)
     cfs_rq->purgatory.blocked_avg_load = se->purgatory.saved_avg_load;    
     cfs_rq->purgatory.nr++;
     cfs_rq->purgatory.blocked_load += se->purgatory.saved_load;
-    
-    trace_purgatory_load(cfs_rq);
-    trace_purgatory(cfs_rq, 0, now);
 
     se->purgatory.stats.added++;
     inc_stat_field(success_add);
+    trace_purgatory_size(cfs_rq);
     return 1;
 }
 
@@ -294,7 +294,7 @@ void purgatory_remove_se(struct cfs_rq *cfs_rq, struct sched_entity *se)
     se->purgatory.cfs_rq = NULL;
 
     list_del_init_careful(&se->purgatory.tasks);
-    trace_purgatory_load(cfs_rq);
+    trace_purgatory_size(cfs_rq);
 }
 
 /*
@@ -343,8 +343,6 @@ int purgatory_try_to_remove_se(struct cfs_rq *cfs_rq, struct sched_entity *se,
 #endif
 
     if (purgatory_can_remove_se(se, now)) {
-        if (!se->purgatory.out)
-            se->purgatory.stats.timed_out++;
         purgatory_remove_se(cfs_rq, se);
     } else {
         return 0;
@@ -364,6 +362,8 @@ void purgatory_do_task_dead(struct task_struct *p)
     rq_lock_irq(rq_of(cfs_rq), &rf);
     purgatory_remove_se(cfs_rq, se);
     rq_unlock_irq(rq_of(cfs_rq), &rf);
+
+    trace_purgatory_size(cfs_rq);
     // se->purgatory.stats.timed_out++;
 
 }
@@ -414,18 +414,17 @@ int purgatory_update(struct cfs_rq *cfs_rq)
     
     list_for_each_entry_safe(pos, tmp, &cfs_rq->purgatory.tasks, purgatory.tasks) {
         if (purgatory_try_to_remove_se(cfs_rq, pos, now)) {
+            pos->purgatory.stats.timed_out++;
             nr_removed++;
         } else {
             break;
         }
     }
 
-    trace_purgatory(cfs_rq, 0, now);
-    trace_purgatory_load(cfs_rq);
     add_stat_field(update_removed, nr_removed);
     
     cfs_rq->purgatory.next_update = now + (nr_removed ? purgatory_update_delta_ns : purgatory_update_delta_ns * 2);
-
+    trace_sched_purgatory_update_stats(nr_removed);
     return nr_removed;
 }
 
@@ -442,7 +441,8 @@ void purgatory_clear(struct cfs_rq *cfs_rq)
     __must_hold(cfs_rq->rq->__lock)
 {
     struct sched_entity *pos, *tmp;
-    
+    unsigned long nr_removed = 0;
+
     lockdep_assert_rq_held(cfs_rq->rq);
 
     if (!cfs_rq->purgatory.nr)
@@ -451,9 +451,9 @@ void purgatory_clear(struct cfs_rq *cfs_rq)
     list_for_each_entry_safe(pos, tmp, &cfs_rq->purgatory.tasks, purgatory.tasks) {
         pos->purgatory.stats.removed_by_clear++;
         purgatory_remove_se(cfs_rq, pos);
+        nr_removed++;
     }
-    trace_purgatory_load(cfs_rq);
-    trace_purgatory(cfs_rq, 0, 0);
+    trace_sched_purgatory_clear_stats(nr_removed);
 }
 
 
