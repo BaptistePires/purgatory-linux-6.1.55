@@ -416,7 +416,6 @@ int purgatory_update(struct cfs_rq *cfs_rq)
     
     list_for_each_entry_safe(pos, tmp, &cfs_rq->purgatory.tasks, purgatory.tasks) {
         if (purgatory_try_to_remove_se(cfs_rq, pos, now)) {
-            pos->purgatory.stats.timed_out++;
             nr_removed++;
         } else {
             break;
