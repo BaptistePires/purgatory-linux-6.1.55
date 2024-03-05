@@ -343,6 +343,8 @@ int purgatory_try_to_remove_se(struct cfs_rq *cfs_rq, struct sched_entity *se,
 #endif
 
     if (purgatory_can_remove_se(se, now)) {
+        if (!se->purgatory.out)
+            se->purgatory.stats.timed_out++;
         purgatory_remove_se(cfs_rq, se);
     } else {
         return 0;
